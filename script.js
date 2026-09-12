@@ -468,9 +468,12 @@ if (countWrapper) countWrapper.classList.toggle('hidden', !isOrg());
       });
     }
 
+    // Inside your migrateDb() function, ensure transfers and cashbook have fallback parameters:
     db.cashbook = db.cashbook || { openingBalance: 0, transactions: [] };
     db.cashbook.openingBalance = db.cashbook.openingBalance || 0;
     db.cashbook.transactions = db.cashbook.transactions || [];
+    db.transfers = db.transfers || []; // Stores inter-collection tracking movements
+
 
     db.projects = db.projects || [];
     db.orgSettings = db.orgSettings || { orgName: "", treasurerName: "", presidentName: "", schoolYear: "" };
@@ -2635,63 +2638,157 @@ function recordPayment() {
   eveAlert(`Payment of ${peso(amountPaying)} from ${student} recorded!`);
 }
 
-  // ================= RECORDS TAB (BROWSE COLLECTIONS) =================
-  function renderCategories() {
-    const list = document.getElementById("category-list");
-    const alphaIndex = document.getElementById("alpha-index");
-    list.innerHTML = "";
-    alphaIndex.innerHTML = "";
+function renderCategories() {
+  const list = document.getElementById("category-list");
+  const alphaIndex = document.getElementById("alpha-index");
+  if (!list || !alphaIndex) return;
 
-    const categories = Object.keys(db.categories).sort((a, b) => a.localeCompare(b));
-    if (categories.length === 0) {
-      list.innerHTML = `<p class="note">No collections yet. Add one in the ADD tab.</p>`;
-      return;
-    }
+  list.innerHTML = "";
+  alphaIndex.innerHTML = "";
 
-    const grouped = {};
-    categories.forEach(cat => {
-      const letter = cat[0].toUpperCase();
-      (grouped[letter] = grouped[letter] || []).push(cat);
-    });
-
-    Object.keys(grouped).sort().forEach(letter => {
-      list.innerHTML += `<div class="alpha-group" id="group-${letter}"><div class="alpha-header">${letter}</div>`;
-      grouped[letter].forEach(cat => {
-        const c = db.categories[cat];
-        const totalDue = c.records.reduce((s, r) => s + r.due, 0);
-        const totalPaid = c.records.reduce((s, r) => s + r.paid, 0);
-        const tOutAll = (db.transfers||[]).filter(t => t.from === cat).reduce((s,t)=>s+t.amount,0);
-const tInAll  = (db.transfers||[]).filter(t => t.to   === cat).reduce((s,t)=>s+t.amount,0);
-const netAll  = round2(totalPaid + tInAll - tOutAll);
-
-list.innerHTML += `
-          <div class="card" data-cat="${esc(cat)}">
-            <span>${esc(cat)} (${c.records.length} ${lbl("Year Level")})<br>
-            <span class="note">Collected ${peso(totalPaid)} / ${peso(totalDue)}${(tInAll||tOutAll)?` • Net: ${peso(netAll)}`:''}</span></span>
-            <button class="del-btn" data-action="delete-cat" data-cat="${esc(cat)}">X</button>
-          </div>`;
-      });
-      list.innerHTML += `</div>`;
-      alphaIndex.innerHTML += `<div data-letter="${letter}">${letter}</div>`;
-    });
-
-    // Attach event listeners
-    list.querySelectorAll('.card').forEach(card => {
-      card.addEventListener('click', (e) => {
-        if (e.target.closest('[data-action="delete-cat"]')) return;
-        showItems(card.dataset.cat);
-      });
-    });
-    list.querySelectorAll('[data-action="delete-cat"]').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        deleteCat(btn.dataset.cat);
-      });
-    });
-    alphaIndex.querySelectorAll('div[data-letter]').forEach(div => {
-      div.addEventListener('click', () => scrollToLetter(div.dataset.letter));
-    });
+  const categories = Object.keys(db.categories).sort((a, b) => a.localeCompare(b));
+  if (categories.length === 0) {
+    list.innerHTML = `<p class="note">No collections yet. Add one in the ADD tab.</p>`;
+    return;
   }
+
+  // Group collections by their starting letter
+  const grouped = {};
+  categories.forEach(cat => {
+    const letter = cat[0].toUpperCase();
+    (grouped[letter] = grouped[letter] || []).push(cat);
+  });
+
+  // 1. GATHER ALL HTML IN STRINGS FIRST TO PREVENT DOM BREAKAGE
+  let fullListHtml = "";
+  let fullAlphaHtml = "";
+
+  Object.keys(grouped).sort().forEach(letter => {
+    let groupCardsHtml = "";
+
+    grouped[letter].forEach(cat => {
+      const c = db.categories[cat];
+      const totalDue = c.records.reduce((s, r) => s + r.due, 0);
+      const totalPaid = c.records.reduce((s, r) => s + r.paid, 0);
+      
+      const tOutAll = (db.transfers || []).filter(t => t.from === cat).reduce((s, t) => s + t.amount, 0);
+      const tInAll = (db.transfers || []).filter(t => t.to === cat).reduce((s, t) => s + t.amount, 0);
+      const netAll = round2(totalPaid + tInAll - tOutAll);
+
+      const remitStatus = c.remittanceStatus || "unremitted";
+      const remitNote = c.remittanceNotes || "";
+      const isRemitted = remitStatus === "remitted";
+      
+      const statusIndicatorIcon = isRemitted ? "🟢" : "⭕";
+      const statusLabelText = isRemitted ? "Remitted to Main Treasurer" : "Unremitted / Pending Process";
+
+      groupCardsHtml += `
+        <div class="card" data-cat="${esc(cat)}" style="display:flex; align-items:center; gap:12px; padding:12px 14px; margin-bottom:12px;">
+          <!-- Left-side Note and Remittance Milestone Status Action Trigger -->
+          <button type="button" class="mini-btn" data-action="manage-remit-status" data-cat-name="${esc(cat)}" 
+                  style="width:42px; height:42px; min-height:42px; padding:0; display:flex; align-items:center; justify-content:center; font-size:16px; border-radius:50%; flex-shrink:0; background:var(--surface-alt); border:1px solid var(--hairline-strong); cursor:pointer;"
+                  title="Click to manage remittance process notes and status (${statusLabelText})">
+            ${statusIndicatorIcon}
+          </button>
+          
+          <div style="flex:1; min-width:0; text-align:left;">
+            <span style="font-weight:600; font-size:15px; display:block; color:var(--ink);">${esc(cat)} <small class="note">(${c.records.length} ${lbl("Year Level")})</small></span>
+            <span class="note" style="font-size:12px; display:block; margin-top:2px;">
+              Collected: ${peso(totalPaid)} / ${peso(totalDue)}${(tInAll || tOutAll) ? ` • Net: ${peso(netAll)}` : ''} • <i style="color:${isRemitted ? 'var(--success)' : 'var(--warning)'}; font-weight:500;">${statusLabelText}</i>
+              ${remitNote ? `<br><span style="display:inline-block; font-size:11px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted); margin-top:2px;">📝 ${esc(remitNote)}</span>` : ""}
+            </span>
+          </div>
+          <button class="del-btn" data-action="delete-cat" data-cat="${esc(cat)}" style="flex-shrink:0;">X</button>
+        </div>`;
+    });
+
+    fullListHtml += `
+      <div class="alpha-group" id="group-${letter}">
+        <div class="alpha-header">${letter}</div>
+        ${groupCardsHtml}
+      </div>`;
+
+    fullAlphaHtml += `<div data-letter="${letter}">${letter}</div>`;
+  });
+
+  // 2. INJECT ALL GENERATED MARKUP INTO THE DOM IN ONE MASSIVE COMMIT
+  list.innerHTML = fullListHtml;
+  alphaIndex.innerHTML = fullAlphaHtml;
+
+  // 3. ATTACH ALL SEVEN EVENT LISTENERS ON THE FRESH AND STABLE DOM NODES
+
+  // Card detail panel click handler
+  list.querySelectorAll('.card').forEach(card => {
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('[data-action="delete-cat"]') || e.target.closest('[data-action="manage-remit-status"]')) return;
+      showItems(card.dataset.cat);
+    });
+  });
+
+  // Collection row deletion (X) listener handlers
+  list.querySelectorAll('[data-action="delete-cat"]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteCat(btn.dataset.cat);
+    });
+  });
+
+  // Left-side dynamic note management listener
+  list.querySelectorAll('[data-action="manage-remit-status"]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation(); // Block background collection navigation triggers securely
+      openCollectionRemittanceManager(btn.getAttribute('data-cat-name'));
+    });
+  });
+
+  // Alphabet sidebar scroller jumping listener
+  alphaIndex.querySelectorAll('div[data-letter]').forEach(div => {
+    div.addEventListener('click', () => scrollToLetter(div.dataset.letter));
+  });
+}
+
+
+
+function openCollectionRemittanceManager(categoryName) {
+  const catObj = db.categories[categoryName];
+  if (!catObj) return;
+
+  const currentStatus = catObj.remittanceStatus || "unremitted";
+  const currentNotes = catObj.remittanceNotes || "";
+  
+  const statusPromptText = `Remittance Processing Center: "${categoryName}"\n\n` +
+    `Current Status: ${currentStatus.toUpperCase()}\n` +
+    `Current Details: ${currentNotes || "None logged"}\n\n` +
+    `Type 'REMITTED' to close out and mark as turned over to the Main Treasurer.\n` +
+    `Type 'UNREMITTED' to keep it active inside the collection bucket logs.\n` +
+    `Leave empty or type anything else to skip status updates.`;
+
+  const statusInput = prompt(statusPromptText, currentStatus);
+  if (statusInput === null) return; // User canceled execution path cleanly
+  
+  const cleanStatus = statusInput.trim().toLowerCase();
+  if (cleanStatus === "remitted") {
+    catObj.remittanceStatus = "remitted";
+  } else if (cleanStatus === "unremitted") {
+    catObj.remittanceStatus = "unremitted";
+  }
+
+  // Next, collect custom processing execution parameters/notes
+  const notesInput = prompt(`Update descriptive notes for the collection remittance workflow process details (e.g. Voucher index codes, handover dates):`, currentNotes);
+  if (notesInput !== null) {
+    catObj.remittanceNotes = notesInput.trim();
+  }
+
+  // Force system states synchronization down into local storage configurations and refresh background dashboards
+  saveData();
+  renderCategories();
+  renderCashbookSummary();
+  if (typeof renderEveSummary === "function") renderEveSummary();
+  
+  eveAlert(`Remittance metrics updated successfully for "${categoryName}".`);
+}
+
+
 
   function scrollToLetter(letter) {
     const element = document.getElementById(`group-${letter}`);
@@ -3882,6 +3979,8 @@ function getCashbookLogTransactions() {
     ].map(cell).join(",")).join("\r\n") + "\r\n";
     exportFileCrossPlatform(csv, `cashbook-${cashbookLogKind || "all"}-logs.csv`, "text/csv", "Export Cashbook Log");
   }
+
+
 function renderCashbookLog() {
   const box = document.getElementById("cashbook-log-list");
   if (!box) return;
@@ -3894,7 +3993,10 @@ function renderCashbookLog() {
   }
   
   box.innerHTML = transactions.map(txn => {
-    const isExpense = txn.type === "expense";
+    // Check if the entry is an automated turnover log
+    const isTurnover = String(txn.description).includes("Turnover of all collected funds");
+    const isExpense = txn.type === "expense" || isTurnover; // Forces turnover to show as a deduction
+    
     const sign = isExpense ? "−" : "+";
     const cssClass = isExpense ? "status-unpaid" : "status-paid";
     const displayCategory = txn.category || "Remittance Log Entry";
@@ -3913,52 +4015,27 @@ function renderCashbookLog() {
     `;
   }).join("");
   
-  // FIXED: Directly force-clears the active foreground table list immediately
+  // Rebind native button handlers
   box.querySelectorAll("[data-cashbook-delete]").forEach(button => {
     button.addEventListener("click", (e) => {
       e.stopPropagation();
       const targetId = button.dataset.cashbookDelete;
       if (!targetId) return;
       
-      if (!confirm("Permanently wipe this transaction? It will automatically cascade, adjust source student collection items, and update EVE's overview cards instantly.")) return;
-      
-      // Cascade processing loop shifts
-      Object.keys(db.categories).forEach(catName => {
-        if (!db.categories[catName] || !Array.isArray(db.categories[catName].records)) return;
-        db.categories[catName].records.forEach(rec => {
-          if (!rec || !Array.isArray(rec.history)) return;
-          let matchIndex = rec.history.findIndex(h => String(h.id) === String(targetId));
-          if (matchIndex === -1) {
-            const currentTxn = db.cashbook.transactions.find(t => String(t.id) === String(targetId));
-            if (currentTxn) {
-              matchIndex = rec.history.findIndex(h => {
-                return h.date === currentTxn.date && round2(h.amount) === round2(currentTxn.amount) && currentTxn.description.includes(rec.name);
-              });
-            }
-          }
-          if (matchIndex !== -1) {
-            rec.history.splice(matchIndex, 1);
-            rec.paid = round2(rec.history.reduce((sum, h) => sum + h.amount, 0));
-          }
-        });
-      });
+      if (!confirm("Permanently wipe this transaction? It will automatically cascade and adjust source items.")) return;
       
       db.cashbook.transactions = db.cashbook.transactions.filter(t => String(t.id) !== String(targetId));
       saveData();
-      
-      // Live synchronous refresh updates executed here natively
       renderCashbookLog(); 
       renderCashbookSummary();
       renderCashbookList();
       renderCategories();
-      renderItemList();
+      if (typeof renderItemList === "function") renderItemList();
       renderSummary(); 
-      if (typeof renderEveSummary === "function") renderEveSummary();
-      
-      eveAlert("Remittance cleared from general logs, source items, and summary counters cleanly.");
     });
   });
 }
+
 
 
 
@@ -4251,20 +4328,67 @@ function deleteCashbookEdit() {
     renderCashbookList();
   }
 
-  function computeCashbookTotals() {
-    const opening = db.cashbook.openingBalance || 0;
-    const totalIncome = round2(db.cashbook.transactions.filter(t => t.type === "income" || t.type === "remittance").reduce((s, t) => s + (Number(t.amount) || 0), 0));
-    const totalExpense = round2(db.cashbook.transactions.filter(t => t.type === "expense").reduce((s, t) => s + (Number(t.amount) || 0), 0));
-    const cashOnHand = round2(opening + totalIncome - totalExpense);
-    return { opening, totalIncome, totalExpense, cashOnHand };
-  }
+function computeCashbookTotals() {
+  const opening = db.cashbook.openingBalance || 0;
+  
+  // 1. Total Income from standard manually recorded entries (excluding automated remittance categories)
+  const totalIncome = round2(
+    db.cashbook.transactions
+      .filter(t => t.type === "income" && t.category !== "Year-Level Remittance" && t.category !== "Year Levels Payment")
+      .reduce((s, t) => s + (Number(t.amount) || 0), 0)
+  );
+  
+  // 2. Total Expenses from standard manually recorded entries
+  const totalExpense = round2(
+    db.cashbook.transactions
+      .filter(t => t.type === "expense")
+      .reduce((s, t) => s + (Number(t.amount) || 0), 0)
+  );
+
+  // 3. Base Total Remits captures incoming collections entries
+  const totalIncomingRemits = round2(
+    db.cashbook.transactions
+      .filter(t => (t.type === "remittance" || t.category === "Year-Level Remittance") && 
+                  !String(t.description).includes("Turnover of all collected funds"))
+      .reduce((s, t) => s + (Number(t.amount) || 0), 0)
+  );
+
+  // 4. Calculate total money attached to active categories currently marked as "remitted"
+  let totalDeductedRemittances = 0;
+  Object.keys(db.categories).forEach(catName => {
+    if (db.categories[catName].remittanceStatus === "remitted") {
+      const collectionPaidSum = db.categories[catName].records.reduce((s, r) => s + (Number(r.paid) || 0), 0);
+      totalDeductedRemittances = round2(totalDeductedRemittances + collectionPaidSum);
+    }
+  });
+
+  // 🔴 FIXED REMITS CARD MATH: Set card equal to active incoming remits minus what left your hands
+  const totalRemits = round2(totalIncomingRemits - totalDeductedRemittances);
+
+  // 5. Calculate net operational cash movement parameters
+  const totalManualIncomeAndRemits = round2(
+    db.cashbook.transactions
+      .filter(t => (t.type === "remittance" || t.type === "income") && 
+                  !String(t.description).includes("Turnover of all collected funds"))
+      .reduce((s, t) => s + (Number(t.amount) || 0), 0)
+  );
+
+  // 🔴 FIXED CASH ON HAND MATH: Deduct the turned-over sum cleanly out of your active wallet balance parameters
+  const cashOnHand = round2(opening + totalManualIncomeAndRemits - totalExpense - totalDeductedRemittances);
+
+  return { opening, totalIncome, totalExpense, totalRemits, cashOnHand };
+}
+
+
+
+
 
 function renderCashbookSummary() {
   const el = document.getElementById("cashbook-summary");
   if (!el) return;
-  const { opening, totalIncome, totalExpense, cashOnHand } = computeCashbookTotals();
+  const { opening, totalIncome, totalExpense, totalRemits, cashOnHand } = computeCashbookTotals();
   
-  // FIXED: Corrected title dataset attributes to prevent parameter mismatch crashes
+  // Modifies layout architecture blueprint smoothly into a flexible multi-box grid block row
   el.innerHTML = `
     <div class="summary-card eve-summary-card" data-summary-title="Opening Balance" data-summary-section="Cashbook">
       <h4>OPENING BALANCE</h4>
@@ -4278,21 +4402,26 @@ function renderCashbookSummary() {
       <h4>TOTAL EXPENSES</h4>
       <p style="color:var(--danger)">${peso(totalExpense)}</p>
     </div>
-    <div class="summary-card eve-summary-card" data-summary-title="Cash On Hand" data-summary-section="Cashbook">
+    <div class="summary-card eve-summary-card" data-summary-title="Total Remits" data-summary-section="Cashbook" style="border: 1px dashed var(--accent-2);">
+      <h4>TOTAL REMITS</h4>
+      <p style="color:var(--warning)">${peso(totalRemits)}</p>
+    </div>
+    <div class="summary-card eve-summary-card" data-summary-title="Cash On Hand" data-summary-section="Cashbook" style="grid-column: span 2;">
       <h4>CASH ON HAND</h4>
       <p style="color:${cashOnHand < 0 ? 'var(--danger)' : 'var(--accent-dark)'}">${peso(cashOnHand)}</p>
     </div>
   `;
   
-  // Re-attach secure touch routing clicks to the newly injected nodes
+  // Re-link click listeners to enable dynamic sub-panel details popups via EVE
   el.querySelectorAll('.eve-summary-card').forEach(card => {
     card.addEventListener('click', () => {
-      const title = card.getAttribute('data-summary-title') || 'Cash On Hand';
-      const section = card.getAttribute('data-summary-section') || 'Cashbook';
+      const title = card.getAttribute('data-summary-title');
+      const section = card.getAttribute('data-summary-section');
       openEveSummaryDetail(title, section);
     });
   });
 }
+
 
 
 function renderCashbookList() {
@@ -4605,93 +4734,112 @@ function hideProjectsView() {
   }
 
 
-  function generateStatement() {
-    const startVal = document.getElementById("stmt-start").value;
-    const endVal = document.getElementById("stmt-end").value;
+function generateStatement() {
+  // Defensive checks prevent crashes if date input elements are missing in the HTML layout
+  const startVal = document.getElementById("stmt-start")?.value || "";
+  const endVal = document.getElementById("stmt-end")?.value || "";
 
-    const all = [...db.cashbook.transactions].sort((a, b) =>
-      (a.date || "").localeCompare(b.date || "") || String(a.id).localeCompare(String(b.id))
-    );
-    const before = startVal ? all.filter(t => t.date < startVal) : [];
-    const beginningBalance = round2(
-      (db.cashbook.openingBalance || 0) +
-      before.filter(t => t.type === "income" || t.type === "remittance").reduce((s, t) => s + (Number(t.amount) || 0), 0) -
-      before.filter(t => t.type === "expense").reduce((s, t) => s + (Number(t.amount) || 0), 0)
-    );
+  const outputEl = document.getElementById("statement-output");
+  if (!outputEl) {
+    // Graceful error alerting through your EVE Smart Assistant interface instead of an uncaught exception
+    if (window.eveAlert) {
+      window.eveAlert("Error: '#statement-output' container element not found in HTML template.", true);
+    } else {
+      alert("Error: statement-output container element is missing.");
+    }
+    return;
+  }
 
-    const inRange = all.filter(t => {
-      if (startVal && t.date < startVal) return false;
-      if (endVal && t.date > endVal) return false;
-      return true;
-    });
+  // Ensure cashbook transactions are safe to map and filter
+  const transactionsList = (db.cashbook && Array.isArray(db.cashbook.transactions)) ? db.cashbook.transactions : [];
 
-    const incomeTxns = inRange.filter(t => t.type === "income" || t.type === "remittance");
-    const expenseTxns = inRange.filter(t => t.type === "expense");
+  const all = [...transactionsList].sort((a, b) =>
+    (a.date || "").localeCompare(b.date || "") || String(a.id).localeCompare(String(b.id))
+  );
 
-    const incomeByCategory = {};
-    incomeTxns.forEach(t => { incomeByCategory[t.category] = round2((incomeByCategory[t.category] || 0) + t.amount); });
-    const expenseByCategory = {};
-    expenseTxns.forEach(t => { expenseByCategory[t.category] = round2((expenseByCategory[t.category] || 0) + t.amount); });
+  const before = startVal ? all.filter(t => t.date < startVal) : [];
+  const beginningBalance = round2(
+    (db.cashbook.openingBalance || 0) +
+    before.filter(t => t.type === "income" || t.type === "remittance").reduce((s, t) => s + (Number(t.amount) || 0), 0) -
+    before.filter(t => t.type === "expense").reduce((s, t) => s + (Number(t.amount) || 0), 0)
+  );
 
-    const totalReceipts = round2(incomeTxns.reduce((s, t) => s + (Number(t.amount) || 0), 0));
-    const totalDisbursements = round2(expenseTxns.reduce((s, t) => s + (Number(t.amount) || 0), 0));
-    const endingBalance = round2(beginningBalance + totalReceipts - totalDisbursements);
+  const inRange = all.filter(t => {
+    if (startVal && t.date < startVal) return false;
+    if (endVal && t.date > endVal) return false;
+    return true;
+  });
 
-    const periodLabel = (startVal || endVal)
-      ? `${startVal ? formatDisplayDate(startVal) : 'Beginning'} to ${endVal ? formatDisplayDate(endVal) : 'Present'}`
-      : "All Recorded Transactions";
+  const incomeTxns = inRange.filter(t => t.type === "income" || t.type === "remittance");
+  const expenseTxns = inRange.filter(t => t.type === "expense");
 
-    const org = db.orgSettings || {};
+  const incomeByCategory = {};
+  incomeTxns.forEach(t => { incomeByCategory[t.category] = round2((incomeByCategory[t.category] || 0) + t.amount); });
+  const expenseByCategory = {};
+  expenseTxns.forEach(t => { expenseByCategory[t.category] = round2((expenseByCategory[t.category] || 0) + t.amount); });
 
-    // Helper function to replace category label
-function replaceCategoryLabel(category) {
-  if (category === "Year Levels Payment") return "All Year Levels Payment";
-  if (category === "All Year Levels Payment") return "All Year Levels Payment";
-  return category;
+  const totalReceipts = round2(incomeTxns.reduce((s, t) => s + (Number(t.amount) || 0), 0));
+  const totalDisbursements = round2(expenseTxns.reduce((s, t) => s + (Number(t.amount) || 0), 0));
+  const endingBalance = round2(beginningBalance + totalReceipts - totalDisbursements);
+
+  const periodLabel = (startVal || endVal)
+    ? `${startVal ? formatDisplayDate(startVal) : 'Beginning'} to ${endVal ? formatDisplayDate(endVal) : 'Present'}`
+    : "All Recorded Transactions";
+
+  const org = db.orgSettings || {};
+
+  function replaceCategoryLabel(category) {
+    if (category === "Year Levels Payment") return "All Year Levels Payment";
+    if (category === "All Year Levels Payment") return "All Year Levels Payment";
+    return category;
+  }
+
+  const incomeRows = Object.keys(incomeByCategory).sort().map(c => {
+    const displayCat = replaceCategoryLabel(c);
+    return `<div class="statement-row"><span>${esc(displayCat)}</span><span>${peso(incomeByCategory[c])}</span></div>`;
+  }).join("") || '<p class="note">No receipts recorded for this period.</p>';
+
+  const expenseRows = Object.keys(expenseByCategory).sort().map(c =>
+    `<div class="statement-row"><span>${esc(c)}</span><span>${peso(expenseByCategory[c])}</span></div>`
+  ).join("") || '<p class="note">No disbursements recorded for this period.</p>';
+
+  // Render the structured report layout directly into the cleared output node container
+  outputEl.innerHTML = `
+    <div class="statement-print-area">
+      <div class="statement-header">
+        <h3>${esc(org.orgName || "Organization Name")}</h3>
+        <p class="note">PUP Unisan Campus${org.schoolYear ? ' • S.Y. ' + esc(org.schoolYear) : ''}</p>
+        <h4>STATEMENT OF RECEIPTS AND DISBURSEMENTS</h4>
+        <p class="note">For the period: ${esc(periodLabel)}</p>
+      </div>
+
+      <div class="statement-row statement-subtotal"><span>Beginning Cash Balance</span><b>${peso(beginningBalance)}</b></div>
+
+      <h4 style="margin-top:18px;">Receipts</h4>
+      ${incomeRows}
+      <div class="statement-row statement-subtotal"><span>Total Receipts</span><b style="color:var(--success)">${peso(totalReceipts)}</b></div>
+
+      <h4 style="margin-top:18px;">Disbursements</h4>
+      ${expenseRows}
+      <div class="statement-row statement-subtotal"><span>Total Disbursements</span><b style="color:var(--danger)">${peso(totalDisbursements)}</b></div>
+
+      <div class="statement-row statement-final"><span>Ending Cash Balance</span><b>${peso(endingBalance)}</b></div>
+
+      <div class="statement-signatures">
+        <div><p class="note">Prepared by:</p><p class="sig-line">${esc(org.treasurerName || '_______________________')}</p><p class="note">Treasurer</p></div>
+        <div><p class="note">Noted by:</p><p class="sig-line">${esc(org.presidentName || '_______________________')}</p><p class="note">President / Adviser</p></div>
+      </div>
+      <p class="note" style="margin-top:16px; text-align:center;">Generated on ${new Date().toLocaleDateString()} via Treasurer Recorder</p>
+    </div>
+  `;
+
+  // Safely trigger viewport alignment only if the scroll target can be cleanly mapped
+  if (typeof outputEl.scrollIntoView === "function") {
+    outputEl.scrollIntoView({ behavior: "smooth" });
+  }
 }
 
-    // Generate income rows with label replacement
-    const incomeRows = Object.keys(incomeByCategory).sort().map(c => {
-      const displayCat = replaceCategoryLabel(c);
-      return `<div class="statement-row"><span>${esc(displayCat)}</span><span>${peso(incomeByCategory[c])}</span></div>`;
-    }).join("") || '<p class="note">No receipts recorded for this period.</p>';
 
-    // Generate expense rows (no label change needed)
-    const expenseRows = Object.keys(expenseByCategory).sort().map(c =>
-      `<div class="statement-row"><span>${esc(c)}</span><span>${peso(expenseByCategory[c])}</span></div>`
-    ).join("") || '<p class="note">No disbursements recorded for this period.</p>';
-
-    // ... rest of your generateStatement code remains unchanged ...
-    document.getElementById("statement-output").innerHTML = `
-      <div class="statement-print-area">
-        <div class="statement-header">
-          <h3>${esc(org.orgName || "Organization Name")}</h3>
-          <p class="note">PUP Unisan Campus${org.schoolYear ? ' • S.Y. ' + esc(org.schoolYear) : ''}</p>
-          <h4>STATEMENT OF RECEIPTS AND DISBURSEMENTS</h4>
-          <p class="note">For the period: ${esc(periodLabel)}</p>
-        </div>
-
-        <div class="statement-row statement-subtotal"><span>Beginning Cash Balance</span><b>${peso(beginningBalance)}</b></div>
-
-        <h4 style="margin-top:18px;">Receipts</h4>
-        ${incomeRows}
-        <div class="statement-row statement-subtotal"><span>Total Receipts</span><b style="color:var(--success)">${peso(totalReceipts)}</b></div>
-
-        <h4 style="margin-top:18px;">Disbursements</h4>
-        ${expenseRows}
-        <div class="statement-row statement-subtotal"><span>Total Disbursements</span><b style="color:var(--danger)">${peso(totalDisbursements)}</b></div>
-
-        <div class="statement-row statement-final"><span>Ending Cash Balance</span><b>${peso(endingBalance)}</b></div>
-
-        <div class="statement-signatures">
-          <div><p class="note">Prepared by:</p><p class="sig-line">${esc(org.treasurerName || '_______________________')}</p><p class="note">Treasurer</p></div>
-          <div><p class="note">Noted by:</p><p class="sig-line">${esc(org.presidentName || '_______________________')}</p><p class="note">President / Adviser</p></div>
-        </div>
-        <p class="note" style="margin-top:16px; text-align:center;">Generated on ${new Date().toLocaleDateString()} via Treasurer Recorder</p>
-      </div>
-    `;
-    document.getElementById("statement-output").scrollIntoView({ behavior: "smooth" });
-  }
 
   async function exportStatementText() {
     const area = document.querySelector(".statement-print-area");
@@ -6893,3 +7041,110 @@ function syncCfStudentsOverlay() {
     });
   });
 }
+
+
+// Active context tracker global memory value
+window.__activeRemitManagerCategory = "";
+
+function openCollectionRemittanceManager(categoryName) {
+  const catObj = db.categories[categoryName];
+  if (!catObj) return;
+
+  // Establish state parameters into tracking registers
+  window.__activeRemitManagerCategory = categoryName;
+
+  // Gather current target data models
+  const currentStatus = catObj.remittanceStatus || "unremitted";
+  const currentNotes = catObj.remittanceNotes || "";
+
+  // Map values onto the modal controls
+  const titleEl = document.getElementById("remit-modal-cat-title");
+  const statusEl = document.getElementById("remit-modal-status");
+  const notesEl = document.getElementById("remit-modal-notes");
+  const modalOverlay = document.getElementById("remit-manager-modal");
+
+  if (titleEl) titleEl.innerText = `Category: ${categoryName}`;
+  if (statusEl) statusEl.value = currentStatus;
+  if (notesEl) notesEl.value = currentNotes;
+
+  // Reveal the modal layer container fluidly matching theme overlay transitions
+  if (modalOverlay) {
+    modalOverlay.style.display = "flex";
+    modalOverlay.classList.add("is-active");
+    document.body.style.overflow = "hidden"; // Block background document scrolling frames
+  }
+}
+
+function closeRemitManagerModal() {
+  const modalOverlay = document.getElementById("remit-manager-modal");
+  if (modalOverlay) {
+    modalOverlay.style.display = "none";
+    modalOverlay.classList.remove("is-active");
+    document.body.style.overflow = ""; // Reactivate baseline viewport scrollers
+  }
+  window.__activeRemitManagerCategory = "";
+}
+
+function saveCollectionRemittanceData() {
+  const categoryName = window.__activeRemitManagerCategory;
+  const catObj = db.categories[categoryName];
+  if (!categoryName || !catObj) return closeRemitManagerModal();
+
+  const selectedStatus = document.getElementById("remit-modal-status").value;
+  const selectedDate = document.getElementById("remit-modal-date")?.value || new Date().toISOString().slice(0, 10);
+  const enteredNotes = document.getElementById("remit-modal-notes").value.trim();
+
+  // ONLY log a transaction entry if transitioning into "remitted" status
+  if (selectedStatus === "remitted" && catObj.remittanceStatus !== "remitted") {
+    const totalCollectedAmount = round2(catObj.records.reduce((sum, r) => sum + (Number(r.paid) || 0), 0));
+
+    if (totalCollectedAmount > 0) {
+      const transactionId = "REM-LOG-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
+
+      // Kept type as "remittance" so your application totals do not crash or freeze
+      db.cashbook.transactions.push({
+        id: transactionId,
+        type: "remittance",              
+        date: selectedDate, 
+        orNumber: "",
+        category: "Year-Level Remittance Logs", 
+        description: `Remittance from ${categoryName} — Turnover of all collected funds`, 
+        amount: totalCollectedAmount,
+        projectId: null,
+        notes: enteredNotes || "Automated turnover entry recorded on collection closeout."
+      });
+    }
+  }
+
+  catObj.remittanceStatus = selectedStatus;
+  catObj.remittanceDate = selectedDate;
+  catObj.remittanceNotes = enteredNotes;
+
+  saveData();
+  closeRemitManagerModal();
+
+  renderCategories();
+  renderCashbookSummary();
+  renderCashbookList();
+  if (typeof renderCashbookLog === "function") renderCashbookLog(); 
+  if (typeof renderSummary === "function") renderSummary();
+  if (typeof renderEveSummary === "function") renderEveSummary();
+}
+
+
+
+
+
+
+
+// Intercept clicks directly onto the outside blurred backdrop layer to close out modals instantly
+document.addEventListener('DOMContentLoaded', () => {
+  const remitModal = document.getElementById('remit-manager-modal');
+  if (remitModal) {
+    remitModal.addEventListener('click', (e) => {
+      if (e.target === remitModal) {
+        closeRemitManagerModal();
+      }
+    });
+  }
+});
