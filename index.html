@@ -756,6 +756,25 @@
     </div>
   </div>
 
+  <!-- =========================================================================
+     🎯 PLACE YOUR BACKUP & RESTORE MARKUP CODE INSIDE HERE:
+  ========================================================================= -->
+  <div class="cf-student-card" style="margin-top: 16px; padding: 18px;">
+    <h4>Data Management & Backup Options</h4>
+    <p class="note" id="backup-status">Checking backup states...</p>
+    
+    <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 12px;">
+      <button type="button" class="btn-save" onclick="exportBackup()">💾 Export Backup (JSON)</button>
+      
+      <label class="file-label" for="import-file-input">📥 Import Backup Database File</label>
+      <input type="file" id="import-file-input" accept=".json" onchange="importBackup(event)" style="display: none;">
+      
+      <button type="button" class="btn-delete-item danger-btn" onclick="resetAllData()">⚠ Reset System Database</button>
+    </div>
+  </div>
+
+</div> <!-- 👈 CRITICAL: This closes the summary tab. Everything ABOVE this line stays hidden on other tabs! -->
+
 
   <nav class="nav-menu">
     <button class="nav-item active" id="nav-add" onclick="switchTab('add-section', this)">
