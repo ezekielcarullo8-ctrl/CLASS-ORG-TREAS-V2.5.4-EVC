@@ -43,6 +43,58 @@
     </div>
   </div>
 
+
+<!-- =========================================================================
+   2. COLLECTION REMITTANCE WORKFLOW PROFILE MANAGER MODAL
+========================================================================= -->
+<div id="remit-manager-modal" class="modal-overlay" style="display: none;">
+  <div class="modal-content" style="max-width: 440px; padding: 24px; text-align: left; box-sizing: border-box; position: relative;">
+    
+    <!-- FIXED: Added width: auto !important to prevent the close box from stretching across your screen horizontally -->
+    <button type="button" class="close-btn" onclick="closeRemitManagerModal()" 
+            style="position: absolute !important; top: 16px !important; right: 16px !important; width: auto !important; max-width: 32px !important; min-width: 0 !important; height: auto !important; background: none !important; border: none !important; font-size: 22px !important; color: var(--muted, #6E7A72) !important; cursor: pointer !important; padding: 4px !important; line-height: 1 !important; display: inline-block !important; box-shadow: none !important; transform: none !important; z-index: 10;">✕</button>
+    
+    <h3 style="margin-bottom: 4px; padding-bottom: 8px; padding-right: 40px; font-family: 'Fraunces', serif; font-size: 19px; font-weight: 600; color: var(--accent-dark); border-bottom: 1.5px dashed var(--hairline); position: relative;">
+      <span class="eve-summary-badge" style="background: var(--accent-2); color: white; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.5px; display: inline-block; vertical-align: middle; margin-right: 4px;">Remit</span> Workflow Profile
+    </h3>
+    <p class="note" id="remit-modal-cat-title" style="font-weight: 700; color: var(--accent-dark); font-size: 13.5px; margin-top: 10px; margin-bottom: 18px; text-transform: uppercase; letter-spacing: 0.5px; font-family: 'Inter', sans-serif;"></p>
+    
+    <div style="display: flex; flex-direction: column; gap: 14px;">
+      <!-- Workflow Status Controller Selector Selection Option Box -->
+      <div>
+        <label class="note" for="remit-modal-status" style="font-weight: 700; color: var(--ink); display: block; margin-bottom: 6px; font-size: 12.5px;">Remittance Status</label>
+        <select id="remit-modal-status" style="width: 100%; font-weight: 600; height: 52px; box-sizing: border-box; background: var(--surface); color: var(--ink); border: 1.5px solid var(--hairline); border-radius: var(--radius-sm); padding: 13px 16px; font-size: 15px;">
+          <option value="unremitted">⭕ Unremitted / Pending Turnover Process</option>
+          <option value="remitted">🟢 Remitted Cleanly to Main Campus Treasurer</option>
+        </select>
+      </div>
+
+      <!-- 🔴 ADD THIS NEW DATE FIELD CONTAINER RIGHT HERE -->
+<div style="margin-top: 12px;">
+  <label class="note" style="display: block; margin-bottom: 4px;">Remittance Date</label>
+  <input type="date" id="remit-modal-date" style="width: 100%; height: 46px; padding: 11px 13px; border-radius: 12px; border: 1.5px solid var(--hairline); background: var(--surface);">
+</div>
+
+
+
+      <!-- Descriptive Processing Audit Notes Area Field -->
+      <div>
+        <label class="note" for="remit-modal-notes" style="font-weight: 700; color: var(--ink); display: block; margin-bottom: 6px; font-size: 12.5px;">Notes</label>
+        <textarea id="remit-modal-notes" rows="4" placeholder="Details..." 
+                  style="width: 100%; height: 110px; padding: 12px 14px; font-size: 15px; border: 1.5px solid var(--hairline); border-radius: var(--radius-sm); resize: none; font-family: 'Inter', sans-serif; color: var(--ink); background: var(--surface); box-sizing: border-box; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);"></textarea>
+      </div>
+
+      <!-- Panel Confirmation Options Row Button Stack -->
+      <div style="display: flex; gap: 10px; margin-top: 6px; width: 100%; box-sizing: border-box;">
+        <button type="button" class="btn-cancel" onclick="closeRemitManagerModal()" style="flex: 1; height: 46px; padding: 0 16px; font-weight: 600; cursor: pointer;">Cancel</button>
+        <button type="button" class="btn-save" onclick="saveCollectionRemittanceData()" style="flex: 1; height: 46px; padding: 0 16px; font-weight: 600; cursor: pointer;">Save Changes</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
   <!-- MODE SELECTOR OVERLAY -->
   <div id="mode-overlay" class="activation-overlay hidden">
     <div class="activation-card" style="max-width: 420px;">
@@ -300,90 +352,209 @@
     <div id="cashbook-section" class="page hidden">
 
       <div id="cashbook-main-view">
-        <p class="note" style="margin-bottom:14px;">This is your organization's general cash book — for tracking dues, sponsorships, event income, and expenses. Recording a transaction here instantly updates both your collection records and your main cash balance simultaneously. If you made a mistake, you can easily edit or delete any logged entry from the ledger below.</p>
 
         <div id="cashbook-summary" class="summary-grid"></div>
+
+        <hr class="section-divider">
 
         <div class="row">
           <button onclick="openOpeningBalanceModal()" style="flex:1;">💰 Set Opening Balance</button>
           <button onclick="showProjectsView()" style="flex:1;">📁 Projects &amp; Events</button>
         </div>
 
-        <h3 style="margin-top:24px;">Cash Book Ledger</h3>
-        <div class="cashbook-log-buttons">
-          <button onclick="openCashbookLog('general')">Income &amp; Expenses</button>
-          <button onclick="openCashbookLog('remittance')">Year-Level Remittances</button>
-          <button onclick="openCashbookLog('all')">All Logs</button>
-        </div>
-        <div id="cashbook-list" class="hidden"></div>
-      </div>
 
         <hr class="section-divider">
-
-        <div class="cashbook-record-box">
-        <h3 id="txn-form-title">Record Transaction</h3>
-        <div class="row">
-          <button type="button" id="type-income-btn" class="type-toggle-btn" onclick="setTxnType('income')" style="flex:1;">+ Income</button>
-          <button type="button" id="type-expense-btn" class="type-toggle-btn" onclick="setTxnType('expense')" style="flex:1;">− Expense</button>
-        </div>
-        <input type="hidden" id="txn-type" value="income">
-        <input type="hidden" id="txn-edit-id" value="">
-
-        <div class="row">
-          <input type="date" id="txn-date">
-          <input type="text" id="txn-or" placeholder="OR / Voucher No. (optional)">
-        </div>
-
-        <div class="row">
-          <select id="txn-category"></select>
-        </div>
-
-        <div class="row">
-          <input type="text" id="txn-description" placeholder="Description (e.g. Membership dues - August)">
-        </div>
-
-        <div class="row">
-          <input type="number" id="txn-amount" placeholder="Amount" step="0.01">
-        </div>
-
-        <div class="row">
-          <div class="custom-dropdown">
-            <input type="text" id="txn-project-search" placeholder="Link to Project/Event (optional)" onkeyup="filterProjectPicker()" onclick="filterProjectPicker()">
-            <div id="txn-project-dropdown" class="dropdown-content"></div>
-          </div>
-        </div>
-        <input type="hidden" id="txn-project-select">
-
-        <textarea id="txn-notes" placeholder="Notes (optional)" style="height:70px; resize:vertical; padding-top:13px; margin-bottom:16px;"></textarea>
-
-        <button class="full-btn" onclick="saveTransaction()">Save Transaction</button>
-        <button class="full-btn btn-cancel" id="txn-cancel-btn" style="display:none;" onclick="cancelTxnEdit()">Cancel Edit</button>
-        <button class="full-btn danger-btn" id="txn-delete-btn" style="display:none;" onclick="deleteCurrentTxn()">Delete This Transaction</button>
-        </div>
         
 
-        <div id="financial-statement-section" class="cashbook-statement-section">
-          <h3>Organization Info</h3>
-          <div class="row">
-            <input type="text" id="org-name" placeholder="Organization Name">
+<!-- =========================================================================
+   COLLAPSIBLE TRANSACTION LOGS ACCORDION PANEL GROUP
+========================================================================= -->
+<div class="cf-student-card" style="padding: 0; margin-top: 14px; margin-bottom: 18px; border-radius: var(--radius);">
+  
+  <!-- Main Primary Parent Action Row Toggle Button -->
+  <button type="button" class="cf-big-button" onclick="document.getElementById('transaction-logs-dropdown-content').classList.toggle('hidden')" style="border: none; margin-bottom: 0; width: 100%;">
+    <span style="display: flex; align-items: center;">
+      <span class="cf-btn-icon" style="margin-right: 12px; font-size: 20px;">📜</span>
+      <span style="color: var(--ink); font-weight: 600;">Transaction Logs</span>
+    </span>
+    <span class="cf-btn-arrow" style="color: var(--muted); font-size: 14px; font-family: monospace;">▼</span>
+  </button>
+  
+  <!-- Collapsible Content Wrapper (Houses the sub-feature buttons inside) -->
+  <div id="transaction-logs-dropdown-content" class="hidden" style="padding: 14px 16px; background: var(--surface-alt); border-top: 1px solid var(--hairline); border-radius: 0 0 var(--radius) var(--radius); display: flex; flex-direction: column; gap: 10px; width: 100%; box-sizing: border-box;">
+    
+    <!-- Sub Button 1: Income & Expenses -->
+    <button type="button" class="cf-big-button" onclick="openCashbookLog('general')" style="margin-bottom: 0; background: var(--surface); width: 100%;">
+      <span style="display: flex; align-items: center;">
+        <span class="cf-btn-icon" style="margin-right: 12px; font-size: 20px;">📊</span>
+        <span style="color: var(--ink); font-weight: 600;">Income & Expenses</span>
+      </span>
+      <span class="cf-btn-arrow" style="color: var(--muted); font-size: 14px; font-family: monospace;">→</span>
+    </button>
+
+    <!-- Sub Button 2: Year-Level Remittances -->
+    <button type="button" class="cf-big-button" onclick="openCashbookLog('remittance')" style="margin-bottom: 0; background: var(--surface); width: 100%;">
+      <span style="display: flex; align-items: center;">
+        <span class="cf-btn-icon" style="margin-right: 12px; font-size: 20px;">💵</span>
+        <span style="color: var(--ink); font-weight: 600;">Year-Level Remittances</span>
+      </span>
+      <span class="cf-btn-arrow" style="color: var(--muted); font-size: 14px; font-family: monospace;">→</span>
+    </button>
+
+    <!-- Sub Button 3: All Logs -->
+    <button type="button" class="cf-big-button" onclick="openCashbookLog('all')" style="margin-bottom: 0; background: var(--surface); width: 100%;">
+      <span style="display: flex; align-items: center;">
+        <span class="cf-btn-icon" style="margin-right: 12px; font-size: 20px;">📁</span>
+        <span style="color: var(--ink); font-weight: 600;">All Logs</span>
+      </span>
+      <span class="cf-btn-arrow" style="color: var(--muted); font-size: 14px; font-family: monospace;">→</span>
+    </button>
+
+  </div>
+</div>
+
+
+<!-- =========================================================================
+   COMPACT MASTER REPORT ENGINE ACCORDION GROUP
+========================================================================= -->
+<div class="cf-student-card" style="padding: 0; margin-top: 14px; margin-bottom: 18px; border-radius: var(--radius); width: 100%; box-sizing: border-box;">
+  
+  <!-- Main Primary Parent Action Row Toggle Button -->
+  <button type="button" class="cf-big-button" onclick="document.getElementById('generate-statement-dropdown-content').classList.toggle('hidden')" style="border: none; margin-bottom: 0; width: 100%;">
+    <span style="display: flex; align-items: center;">
+      <span class="cf-btn-icon" style="margin-right: 12px; font-size: 20px;">📜</span>
+      <span style="color: var(--ink); font-weight: 600;">Generate Statement</span>
+    </span>
+    <span class="cf-btn-arrow" style="color: var(--muted); font-size: 14px; font-family: monospace;">▼</span>
+  </button>
+  
+  <!-- Collapsible Content Wrapper (Houses both sub-accordion feature boxes inside) -->
+  <div id="generate-statement-dropdown-content" class="hidden" style="padding: 14px 16px; background: var(--surface-alt); border-top: 1px solid var(--hairline); border-radius: 0 0 var(--radius) var(--radius); display: flex; flex-direction: column; gap: 12px; width: 100%; box-sizing: border-box;">
+    
+    <!-- SUB-FEATURE 1: Organization Configuration Accordion Panel Box -->
+    <div class="cf-student-card" style="padding: 0; margin-bottom: 0; border-radius: var(--radius); background: var(--surface); width: 100%; box-sizing: border-box;">
+      <button type="button" class="cf-big-button" onclick="document.getElementById('nested-org-info-content').classList.toggle('hidden')" style="border: none; margin-bottom: 0; width: 100%; background: transparent;">
+        <span style="display: flex; align-items: center;">
+          <span class="cf-btn-icon" style="margin-right: 12px; font-size: 20px;">🏢</span>
+          <span style="color: var(--ink); font-weight: 600;">Organization Information Setup</span>
+        </span>
+        <span class="cf-btn-arrow" style="color: var(--muted); font-size: 14px; font-family: monospace;">▼</span>
+      </button>
+      
+      <!-- Sub-Feature 1 Input Folder Container -->
+      <div id="nested-org-info-content" class="hidden" style="padding: 16px; background: var(--surface-alt); border-top: 1px solid var(--hairline); border-radius: 0 0 var(--radius) var(--radius);">
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+          <input type="text" id="org-name" placeholder="Organization Name (e.g. ITO - PUP UNISAN)" style="width: 100%; box-sizing: border-box;">
+          
+          <div style="display: flex; gap: 10px;">
+            <input type="text" id="org-treasurer" placeholder="Treasurer Name" style="flex: 1; min-width: 0; box-sizing: border-box;">
+            <input type="text" id="org-president" placeholder="President / Adviser Name" style="flex: 1; min-width: 0; box-sizing: border-box;">
           </div>
-          <div class="row">
-            <input type="text" id="org-treasurer" placeholder="Treasurer Name">
-            <input type="text" id="org-president" placeholder="President / Adviser Name">
-          </div>
-          <div class="row">
-            <input type="text" id="org-sy" placeholder="School Year">
-          </div>
-          <button class="full-btn" onclick="saveOrgSettings()">Save Organization Info</button>
-          <h3>Financial Statement</h3>
-          <div class="row">
-            <input type="date" id="stmt-start">
-            <input type="date" id="stmt-end">
-          </div>
-          <button class="full-btn" onclick="generateStatement()">Generate Statement</button>
-          <div id="statement-output"></div>
-          <button class="full-btn" onclick="openStatementFullscreen()">Show Statement Full Screen</button>
+          
+          <input type="text" id="org-sy" placeholder="School Year" style="width: 100%; box-sizing: border-box;">
+          <button type="button" class="btn-save" onclick="saveOrgSettings()" style="width: 100%; height: 48px; margin-top: 4px;">Save Organization Info</button>
         </div>
+      </div>
+    </div>
+
+    <!-- SUB-FEATURE 2: Financial Statement Date Picker Panel Box -->
+    <div class="cf-student-card" style="padding: 0; margin-bottom: 0; border-radius: var(--radius); background: var(--surface); width: 100%; box-sizing: border-box;">
+      <button type="button" class="cf-big-button" onclick="document.getElementById('nested-statement-engine-content').classList.toggle('hidden')" style="border: none; margin-bottom: 0; width: 100%; background: transparent;">
+        <span style="display: flex; align-items: center;">
+          <span class="cf-btn-icon" style="margin-right: 12px; font-size: 20px;">📄</span>
+          <span style="color: var(--ink); font-weight: 600;">Financial Statement Generator</span>
+        </span>
+        <span class="cf-btn-arrow" style="color: var(--muted); font-size: 14px; font-family: monospace;">▼</span>
+      </button>
+      
+      <!-- Sub-Feature 2 Input Folder Container -->
+      <div id="nested-statement-engine-content" class="hidden" style="padding: 16px; background: var(--surface-alt); border-top: 1px solid var(--hairline); border-radius: 0 0 var(--radius) var(--radius);">
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+          <div style="display: flex; gap: 10px;">
+            <div style="flex: 1;">
+              <label class="note" style="display: block; margin-bottom: 4px; font-weight: 600;">Start Date</label>
+              <input type="date" id="stmt-start" style="width: 100%; box-sizing: border-box; height: 48px;">
+            </div>
+            <div style="flex: 1;">
+              <label class="note" style="display: block; margin-bottom: 4px; font-weight: 600;">End Date</label>
+              <input type="date" id="stmt-end" style="width: 100%; box-sizing: border-box; height: 48px;">
+            </div>
+          </div>
+          
+          <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 6px;">
+            <button type="button" class="btn-save" onclick="generateStatement()" style="width: 100%; height: 48px;">Generate Statement</button>
+            <button type="button" class="btn-cancel" onclick="openStatementFullscreen()" style="width: 100%; height: 48px; background: var(--surface); border: 1.5px solid var(--hairline);">Show Statement Full Screen</button>
+            <!-- 🔴 ADD THIS EXACT LINE RIGHT HERE BELOW THE BUTTONS -->
+<div id="statement-output"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+
+        <hr class="section-divider">
+        
+
+<!-- =========================================================================
+   CASHBOOK TRANSACTION RECORD FORM ROW STACK
+========================================================================= -->
+<div class="cashbook-record-box">
+  <h4 id="txn-form-title">Record Transaction</h4>
+  
+  <input type="hidden" id="txn-edit-id" value="">
+  <input type="hidden" id="txn-type" value="income">
+
+  <!-- Transaction Type Toggles Row -->
+  <div class="row" style="margin-bottom: 16px;">
+    <button type="button" id="type-income-btn" class="type-toggle-btn selected-income" onclick="setTxnType('income')">+ Income</button>
+    <button type="button" id="type-expense-btn" class="type-toggle-btn" onclick="setTxnType('expense')">− Expense</button>
+  </div>
+
+  <!-- Isolated container for Date input field -->
+  <div class="row" style="margin-bottom: 12px; width: 100%;">
+    <input type="date" id="txn-date" value="2026-09-12" style="width: 100%; box-sizing: border-box;">
+  </div>
+
+  <!-- Moved Description directly below the Date as a full-width row -->
+  <div class="row" style="margin-bottom: 12px; width: 100%;">
+    <input type="text" id="txn-description" placeholder="Description (e.g. Membersh" style="width: 100%; box-sizing: border-box;">
+  </div>
+
+  <!-- Transaction Numeric Operational Value Input Row -->
+  <div class="row" style="margin-bottom: 12px; width: 100%;">
+    <input type="number" id="txn-amount" step="0.01" placeholder="Amount" style="width: 100%; box-sizing: border-box;">
+  </div>
+
+  <!-- Project linking dropdown row -->
+  <div class="row" style="margin-bottom: 12px; position: relative; width: 100%;">
+    <div class="custom-dropdown" style="width: 100%;">
+      <input type="text" id="txn-project-search" placeholder="Link to Project/Event (optional)" oninput="filterProjectPicker()" onfocus="filterProjectPicker()" style="width: 100%; box-sizing: border-box;">
+      <input type="hidden" id="txn-project-select" value="">
+      <div id="txn-project-dropdown" class="dropdown-content"></div>
+    </div>
+  </div>
+
+  <!-- Extra Details Textarea Box Input Field Row Layout Block -->
+  <div class="row" style="margin-bottom: 16px; width: 100%;">
+    <textarea id="txn-notes" placeholder="Notes (optional)" rows="3" style="width: 100%; height: 80px; padding: 12px; font-size: 15px; border: 1.5px solid var(--hairline); border-radius: var(--radius-sm); resize: none; font-family: inherit; box-sizing: border-box;"></textarea>
+  </div>
+
+  <!-- Interactive Action Confirmation Options Execution Strip Panel Block Button Stack -->
+  <div class="item-actions" style="width: 100%; box-sizing: border-box;">
+    <button type="button" class="btn-save" onclick="saveTransaction()" style="width: 100%; height: 52px;">Save Transaction</button>
+    <button type="button" id="txn-delete-btn" class="btn-delete-item" onclick="deleteCashbookEdit()" style="display: none; height: 52px;">Delete This Transaction</button>
+    <button type="button" id="txn-cancel-btn" class="btn-cancel" onclick="resetTxnForm()" style="display: none; height: 52px;">Cancel Edit</button>
+  </div>
+</div>
+
+
+        
+
+
+
 
         <hr class="section-divider">
 
@@ -923,6 +1094,6 @@
   </div>
 
   <script src="script.js"></script>
-
+      
   </body>
   </html>
