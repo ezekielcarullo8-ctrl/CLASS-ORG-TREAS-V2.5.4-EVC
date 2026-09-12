@@ -3738,3 +3738,16 @@ body.mode-class #add-year-filter {
   color: #dc2626 !important;
   transform: scale(1.15) !important;
 }
+
+/* Update inside style.css or your media queries block to handle 5 cards cleanly */
+.summary-grid, #cashbook-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+@media (max-width: 480px) {
+  .summary-grid, #cashbook-summary {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
