@@ -3469,46 +3469,7 @@ if (catObj.records.length === 0) {
         </div>`;
     }
 
-    if (editingIndex === idx) {
-      const historyHtml = rec.history.length
-        ? rec.history.map((h, hIdx) => `
-            <div class="history-entry">
-              <span>${peso(h.amount)} on ${esc(h.date)}${h.note ? ' • ' + esc(h.note) : ''}</span>
-              <div class="history-actions">
-                <button class="mini-btn" data-action="edit-hist" data-rec="${idx}" data-hist="${hIdx}">EDIT</button>
-                <button class="mini-btn mini-delete" data-action="del-hist" data-rec="${idx}" data-hist="${hIdx}">DEL</button>
-              </div>
-            </div>`).join("")
-        : `<div class="note">No payments logged yet.</div>`;
 
-      return `
-        <div class="item-row editing" id="item-${idx}">
-          <b>${esc(rec.name)}</b>
-          <div class="edit-note">
-            💡 <b>Tip:</b> You can edit <b>Amount Due</b> and <b>Total Paid</b> directly, or use <b>Add Payment</b> to log a new installment. Deleting a history entry recalculates the total automatically.
-          </div>
-          
-          <input type="number" id="edit-due-${idx}" value="${rec.due}" step="0.01" placeholder="Amount Due">
-          <input type="number" id="edit-paid-${idx}" value="${rec.paid}" step="0.01" placeholder="Total Paid">
-                    <div class="row" style="margin-bottom:8px;">
-            <input type="date" id="quick-pay-date-${idx}" value="${new Date().toISOString().slice(0,10)}">
-            <input type="text" id="quick-pay-note-${idx}" placeholder="Note (optional)">
-          </div>
-          <div class="row" style="margin-bottom:0;">
-            <input type="number" id="quick-pay-${idx}" placeholder="Add new payment">
-            <button class="btn-save" data-action="quick-pay" data-idx="${idx}">ADD PAYMENT</button>
-          </div>
-          <div class="history-box">
-            <p class="note"><b>Payment History:</b> (editing/deleting an entry recalculates Total Paid)</p>
-            ${historyHtml}
-          </div>
-          <div class="item-actions">
-            <button class="btn-save" data-action="save-edit" data-idx="${idx}">SAVE</button>
-            <button class="btn-delete-item" data-action="delete-item" data-idx="${idx}">REMOVE FROM LIST</button>
-            <button class="btn-cancel" data-action="cancel-edit">CANCEL</button>
-          </div>
-        </div>`;
-    }
 
     return `
       <div class="item-row" data-action="edit-item" data-idx="${idx}">
