@@ -4172,7 +4172,7 @@ function openCashbookLog(kind) {
       
     document.getElementById("cashbook-log-search").value = "";
     
-    // 1. DYNAMICALLY INJECT THE FILTER SELECT DROPDOWN
+    // 1. DYNAMICALLY INJECT AND FORCE SYNCHRONIZE CHANNELS INITIALIZATION
     const searchInput = document.getElementById("cashbook-log-search");
     if (searchInput && kind !== "remittance") {
       let filterWrapper = document.getElementById("cashbook-log-filter-wrapper");
@@ -4191,7 +4191,13 @@ function openCashbookLog(kind) {
         searchInput.parentNode.insertBefore(filterWrapper, searchInput.nextSibling);
       } else {
         filterWrapper.style.display = "block";
-        document.getElementById("cashbook-log-type-filter").value = "all";
+      }
+      
+      // 🌟 FIXED: Explicitly force selection parameters layout assignment 
+      // right here so the very first rendering cycle has a reliable fallback state
+      const selectElement = document.getElementById("cashbook-log-type-filter");
+      if (selectElement) {
+        selectElement.value = "all";
       }
     } else {
       const existingWrapper = document.getElementById("cashbook-log-filter-wrapper");
@@ -4201,13 +4207,17 @@ function openCashbookLog(kind) {
     // 2. PLACE THE SCANNER HOOK HERE (Watches search field typing entries)
     const searchInputBoxNode = document.getElementById("cashbook-log-search");
     if (searchInputBoxNode) {
-      // Remove any existing input listeners to avoid double-trigger bugs
       searchInputBoxNode.removeEventListener("input", renderCashbookLog);
       searchInputBoxNode.addEventListener("input", renderCashbookLog);
     }
     
     overlay.classList.remove("hidden");
-    renderCashbookLog();
+    
+    // 🌟 FIXED: Defer your render sequence inside a micro requestAnimationFrame loop 
+    // to give the WebView canvas layout thread time to bind selection fields completely
+    requestAnimationFrame(() => {
+      renderCashbookLog();
+    });
 }
 
 
@@ -4297,16 +4307,28 @@ function renderCashbookLog() {
   box.innerHTML = transactions.map(txn => {
     // Check if the entry is an automated turnover log
     const isTurnover = String(txn.description).includes("Turnover of all collected funds");
-    const isExpense = txn.type === "expense" || isTurnover; // Forces turnover to show as a deduction
+    const isExpense = txn.type === "expense" || isTurnover; // Forces turnover to show as a deduction look
     
     const sign = isExpense ? "−" : "+";
     const cssClass = isExpense ? "status-unpaid" : "status-paid";
     const displayCategory = txn.category || "Remittance Log Entry";
     
+    // 🌟 LOOKUP: Find the project name from the database if a project is linked
+    let projectParenthesis = "";
+    if (txn.projectId && Array.isArray(db.projects)) {
+      const linkedProject = db.projects.find(p => String(p.id) === String(txn.projectId));
+      if (linkedProject && linkedProject.name) {
+        projectParenthesis = ` <span class="note" style="font-weight: 500; font-size: 13px; color: var(--muted); opacity: 0.85;">(${esc(linkedProject.name)})</span>`;
+      }
+    }
+    
     return `
       <div class="cashbook-log-row" style="display:flex; justify-content:space-between; align-items:center; padding:12px 14px; border-bottom:1px solid rgba(0,0,0,0.06); background:#fff;">
         <div style="text-align:left; flex:1; min-width:0; padding-right:10px;">
-          <b style="color:#1F2A24 !important; font-size:14px; font-weight:700; display:inline-block; margin-bottom:3px; word-break:break-word;">${esc(txn.description)}</b><br>
+          <!-- 🌟 FORMATTING: Appended the projectParenthesis right next to description -->
+          <b style="color:#1F2A24 !important; font-size:14px; font-weight:700; display:inline-block; margin-bottom:3px; word-break:break-word;">
+            ${esc(txn.description)}${projectParenthesis}
+          </b><br>
           <span class="note" style="font-size:12px; color:#55625A !important; font-family:'IBM Plex Mono',monospace;">${esc(txn.date)} • ${esc(displayCategory)}</span>
         </div>
         <div style="display:flex; align-items:center; gap:14px; text-align:right; flex-shrink:0;">
@@ -4317,7 +4339,7 @@ function renderCashbookLog() {
     `;
   }).join("");
   
-  // Rebind native button handlers
+  // Rebind native button click handlers
   box.querySelectorAll("[data-cashbook-delete]").forEach(button => {
     button.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -4326,17 +4348,34 @@ function renderCashbookLog() {
       
       if (!confirm("Permanently wipe this transaction? It will automatically cascade and adjust source items.")) return;
       
+      // 🌟 REVERSION LOGIC: If a user deletes an automated turnover, restore its category status
+      const targetTxn = db.cashbook.transactions.find(t => String(t.id) === String(targetId));
+      if (targetTxn && targetTxn.description && targetTxn.description.includes("Turnover of all collected funds")) {
+        // Extract the category name safely from description (e.g. "Remittance from SSC — Turnover...")
+        const rawName = targetTxn.description.replace("Remittance from ", "");
+        const splitIndex = rawName.indexOf(" — ");
+        const categoryKey = splitIndex !== -1 ? rawName.substring(0, splitIndex).trim() : rawName.trim();
+        
+        if (db.categories[categoryKey]) {
+          db.categories[categoryKey].remittanceStatus = "unremitted"; // Revert flag state to active open
+        }
+      }
+      
       db.cashbook.transactions = db.cashbook.transactions.filter(t => String(t.id) !== String(targetId));
       saveData();
+      
+      // 🌟 LIVE SYNCHRONIZATION: Update your totals and list rows immediately across screens
+      renderSummary();          // <-- Refreshes TOTAL COLLECTED back to ₱510.00 instantly on deletion
+      renderCategories();       // <-- Refreshes your list row circles and badges 
       renderCashbookLog(); 
       renderCashbookSummary();
       renderCashbookList();
-      renderCategories();
       if (typeof renderItemList === "function") renderItemList();
-      renderSummary(); 
     });
   });
 }
+
+
 
 
 
@@ -4647,28 +4686,30 @@ function deleteCashbookEdit() {
 function computeCashbookTotals() {
   const opening = db.cashbook.openingBalance || 0;
   
-  // 1. Total Income from standard manually filled transactions form fields
+  // 1. Total standard manual income entries (excluding automated turnovers)
   const totalIncome = round2(
     db.cashbook.transactions
-      .filter(t => t.type === "income" && t.category !== "Year-Level Remittance" && t.category !== "Year Levels Payment")
+      .filter(t => t.type === "income" && !/Turnover of all collected funds/i.test(t.description))
       .reduce((s, t) => s + (Number(t.amount) || 0), 0)
   );
   
-  // 2. Total Expenses from standard manually filled transactions form fields
+  // 2. Total manual expense entries
   const totalExpense = round2(
     db.cashbook.transactions
       .filter(t => t.type === "expense")
       .reduce((s, t) => s + (Number(t.amount) || 0), 0)
   );
 
-  // 3. Base Total Remits captures all initial un-adjusted entries
-  let totalRemits = round2(
-    db.cashbook.transactions
-      .filter(t => t.type === "remittance" || t.category === "Year-Level Remittance" || t.category === "Year-Level Remittance Logs")
-      .reduce((s, t) => s + (Number(t.amount) || 0), 0)
-  );
+  // 3. Sum of all active unremitted collection values
+  let totalRemits = 0;
+  Object.keys(db.categories).forEach(catName => {
+    if (db.categories[catName].remittanceStatus !== "remitted") {
+      const collectionPaidSum = db.categories[catName].records.reduce((s, r) => s + (Number(r.paid) || 0), 0);
+      totalRemits = round2(totalRemits + collectionPaidSum);
+    }
+  });
 
-  // 4. Calculate total money attached to collections marked as "remitted"
+  // 4. Sum of all funds officially turned over to the Main Treasurer
   let totalDeductedRemittances = 0;
   Object.keys(db.categories).forEach(catName => {
     if (db.categories[catName].remittanceStatus === "remitted") {
@@ -4677,21 +4718,20 @@ function computeCashbookTotals() {
     }
   });
 
-  // Subtract the turned-over money from the Total Remitted overview metric card
-  totalRemits = round2(totalRemits - totalDeductedRemittances);
-
-  // 5. Calculate net incoming items streams safely
+  // 5. Calculate live Cash On Hand wallet balance safely
   const netIncomeAndRemits = round2(
     db.cashbook.transactions
       .filter(t => t.type === "remittance" || t.type === "income")
       .reduce((s, t) => s + (Number(t.amount) || 0), 0)
   );
 
-  // Subtract the turned-over money from the live wallet balance directly 
   const cashOnHand = round2(opening + netIncomeAndRemits - totalExpense - totalDeductedRemittances);
 
   return { opening, totalIncome, totalExpense, totalRemits, cashOnHand };
 }
+
+
+
 
 
 
@@ -5392,18 +5432,70 @@ function renderSummary() {
   if (metricsContainer) {
     const catsCount = Object.keys(db.categories || {}).length;
     const studsCount = (db.students || []).length;
-    let grandTotalPaid = 0;
+    
+    // 1. Calculate raw money inside your collection categories
+    let collectionsPaidTotal = 0;
+    let collectionsDueTotal = 0;
     Object.values(db.categories || {}).forEach(c => {
-      grandTotalPaid += (c.records || []).reduce((s, r) => s + (r.paid || 0), 0);
+      collectionsPaidTotal += (c.records || []).reduce((s, r) => s + (r.paid || 0), 0);
+      collectionsDueTotal += (c.records || []).reduce((s, r) => s + (r.due || 0), 0);
     });
 
+    // 2. 🌟 FIXED: Searches for the word "turnover" case-insensitively, bypassing dash symbols completely
+    let totalTurnedOverRemittances = 0;
+    if (db.cashbook && Array.isArray(db.cashbook.transactions)) {
+      totalTurnedOverRemittances = db.cashbook.transactions
+        .filter(t => 
+          (t.type === "remittance" || t.category === "Year-Level Remittance Logs") && 
+          t.description && 
+          /turnover/i.test(t.description)
+        )
+        .reduce((s, t) => s + (Number(t.amount) || 0), 0);
+    }
+
+    // 3. Subtract turnovers from collections total so it drops to 0 on closeout
+    const grandTotalPaid = Math.max(0, round2(collectionsPaidTotal - totalTurnedOverRemittances));
+    
+    // 4. Recalculate remaining balance outstanding
+    const grandTotalBalance = Math.max(0, round2(collectionsDueTotal - collectionsPaidTotal));
+
+    // 5. Get the current Cash Book Balance to keep summary cards aligned
+    const { cashOnHand } = typeof computeCashbookTotals === "function" 
+      ? computeCashbookTotals() 
+      : { cashOnHand: 0 };
+
     metricsContainer.innerHTML = `
-      <div class="summary-card"><h4>Database Items</h4><p>${studsCount}</p></div>
-      <div class="summary-card"><h4>Collections</h4><p>${catsCount}</p></div>
-      <div class="summary-card" style="grid-column: span 2;"><h4>Total Collections Money</h4><p style="color:var(--success)">${peso(grandTotalPaid)}</p></div>
+      <div class="summary-card">
+        <h4>TOTAL YEAR LEVELS</h4>
+        <p>${studsCount}</p>
+      </div>
+      <div class="summary-card">
+        <h4>ALL COLLECTION CATEGORIES</h4>
+        <p>${catsCount}</p>
+      </div>
+      <div class="summary-card">
+        <h4>TOTAL COLLECTED</h4>
+        <p style="color:var(--success)">${peso(grandTotalPaid)}</p>
+      </div>
+      <div class="summary-card">
+        <h4>TOTAL BALANCE</h4>
+        <p style="color:var(--danger)">${peso(grandTotalBalance)}</p>
+      </div>
+      <div class="summary-card">
+        <h4>CASH BOOK BALANCE</h4>
+        <p>${peso(cashOnHand)}</p>
+      </div>
+      <div class="summary-card">
+        <h4>ACTIVE PROJECTS</h4>
+        <p>${db.projects ? db.projects.length : 0}</p>
+      </div>
     `;
   }
 }
+
+
+
+
 
 function openBackupFullscreen() {
   const source = document.getElementById("backup-section") || document.getElementById("summary-section");
@@ -7468,14 +7560,13 @@ function saveCollectionRemittanceData() {
   const selectedDate = document.getElementById("remit-modal-date")?.value || new Date().toISOString().slice(0, 10);
   const enteredNotes = document.getElementById("remit-modal-notes").value.trim();
 
-  // ONLY log a transaction entry if transitioning into "remitted" status
+  // 1. CONDITION A: Toggling "ON" to REMITTED
   if (selectedStatus === "remitted" && catObj.remittanceStatus !== "remitted") {
     const totalCollectedAmount = round2(catObj.records.reduce((sum, r) => sum + (Number(r.paid) || 0), 0));
 
     if (totalCollectedAmount > 0) {
       const transactionId = "REM-LOG-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
 
-      // Kept type as "remittance" so your application totals do not crash or freeze
       db.cashbook.transactions.push({
         id: transactionId,
         type: "remittance",              
@@ -7488,8 +7579,19 @@ function saveCollectionRemittanceData() {
         notes: enteredNotes || "Automated turnover entry recorded on collection closeout."
       });
     }
+  } 
+  // 2. CONDITION B: Toggling "OFF" back to UNREMITTED
+  else if (selectedStatus !== "remitted" && catObj.remittanceStatus === "remitted") {
+    if (db.cashbook && Array.isArray(db.cashbook.transactions)) {
+      db.cashbook.transactions = db.cashbook.transactions.filter(t => {
+        const isRemitLog = t.type === "remittance" || t.category === "Year-Level Remittance Logs";
+        const isMatchDesc = t.description && t.description.includes(`Remittance from ${categoryName} — Turnover`);
+        return !(isRemitLog && isMatchDesc);
+      });
+    }
   }
 
+  // Update object data settings
   catObj.remittanceStatus = selectedStatus;
   catObj.remittanceDate = selectedDate;
   catObj.remittanceNotes = enteredNotes;
@@ -7497,13 +7599,17 @@ function saveCollectionRemittanceData() {
   saveData();
   closeRemitManagerModal();
 
-  renderCategories();
-  renderCashbookSummary();
+  // 🌟 FORCE REAL-TIME RENDERING SYNCHRONIZATION
+  renderSummary();          // <-- Instantly live updates the TOTAL COLLECTED dashboard block 
+  renderCategories();       // <-- Instantly updates list rows and dots on the screen
+  renderCashbookSummary();   
   renderCashbookList();
+  
   if (typeof renderCashbookLog === "function") renderCashbookLog(); 
-  if (typeof renderSummary === "function") renderSummary();
   if (typeof renderEveSummary === "function") renderEveSummary();
 }
+
+
 
 
 
