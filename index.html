@@ -9,6 +9,7 @@
   <base target="_blank">
   <base target="_blank">
   </head>
+
   <body>
 
 
@@ -550,15 +551,9 @@
   </div>
 </div>
 
-
-        
-
-
-
-
         <hr class="section-divider">
-
-
+ </div>  <!-- ✅ ADDED: closes #cashbook-main-view -->
+  </div>  <!-- ✅ ADDED: closes #cashbook-section -->
 
       <div id="projects-view" class="hidden">
         <div class="item-header">
@@ -586,8 +581,6 @@
         <h3>Linked Transactions</h3>
         <div id="project-detail-txns"></div>
       </div>
-
-    </div>
 
       <!-- CLASS FUND SECTION (Class Mode Only) -->
       <div id="classfund-section" class="page hidden">
@@ -675,20 +668,8 @@
 
     </div>
 
-    <!-- BACKUP SECTION -->
-    <div id="summary-section" class="page hidden">
-      
-      
-      <h3>Backup &amp; Restore</h3>
-      <p class="note">Your data lives only in this browser. Back it up regularly so you never lose records.</p>
-      <p class="note" id="backup-status" style="font-weight:700; margin-bottom:10px;"></p>
-      <button class="full-btn" onclick="exportBackup()">Export Backup (JSON)</button>
-      <label class="file-label">
-        Import Backup
-        <input type="file" accept="application/json" onchange="importBackup(event)" style="display:none;">
-      </label>
-      <button class="full-btn danger-btn" onclick="resetAllData()">Reset All Data</button>
-    </div>
+
+
 
     <!-- TRANSFER FUNDS MODAL -->
   <div id="transfer-modal" class="activation-overlay hidden">
@@ -756,26 +737,33 @@
     </div>
   </div>
 
-  <!-- =========================================================================
-     🎯 PLACE YOUR BACKUP & RESTORE MARKUP CODE INSIDE HERE:
-  ========================================================================= -->
-  <div class="cf-student-card" style="margin-top: 16px; padding: 18px;">
-    <h4>Data Management & Backup Options</h4>
+
+
+<!-- 📁 LOCATE THIS CONTAINER WRAPPER IN YOUR HTML AND UPDATE ITS INTERIOR -->
+<div id="summary-section" class="page hidden">
+ 
+  <hr class="header-rule">
+
+
+  <div class="section-divider"></div>
+
+  <!-- 2. Permanent Data Management & Backup Options Block -->
+  <div class="cashbook-record-box" style="margin-top: 20px;">
+    <h3>Data Management & Backup Options</h3>
     <p class="note" id="backup-status">Checking backup states...</p>
     
-    <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 12px;">
-      <button type="button" class="btn-save" onclick="exportBackup()">💾 Export Backup (JSON)</button>
-      
-      <label class="file-label" for="import-file-input">📥 Import Backup Database File</label>
-      <input type="file" id="import-file-input" accept=".json" onchange="importBackup(event)" style="display: none;">
-      
-      <button type="button" class="btn-delete-item danger-btn" onclick="resetAllData()">⚠ Reset System Database</button>
-    </div>
+    <button type="button" onclick="exportBackup()">💾 Export Backup (JSON)</button>
+    
+    <label class="file-label" style="margin-top: 12px; display: block;">
+      📥 Import Backup Database File
+      <input type="file" id="import-file" style="display:none;" onchange="importBackup(event)">
+    </label>
+    
+    <button type="button" class="danger-btn" onclick="resetAllData()" style="margin-top: 12px;">⚠ Reset System Database</button>
   </div>
+</div>
 
-</div> <!-- 👈 CRITICAL: This closes the summary tab. Everything ABOVE this line stays hidden on other tabs! -->
-
-
+        
   <nav class="nav-menu">
     <button class="nav-item active" id="nav-add" onclick="switchTab('add-section', this)">
       <span>➕</span>Add
@@ -797,6 +785,8 @@
     </button>
     
   </nav>
+
+  </div>
 
     <!-- EVE Bot Assistant -->
     <div class="eve-bot" id="eveBot">
@@ -1111,7 +1101,7 @@
     </div>
   </div>
 
-  <script src="script.js"></script>
+  <script src="script.js" ></script>
 
   </body>
   </html>
