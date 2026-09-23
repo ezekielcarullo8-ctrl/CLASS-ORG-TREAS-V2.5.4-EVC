@@ -3414,73 +3414,83 @@ if (catObj.records.length === 0) {
     return;
   }
 
-  // Safety reset if the stored index is now out of bounds
-  if (editingIndex !== null && (editingIndex < 0 || editingIndex >= catObj.records.length)) {
-    editingIndex = null;
-  }
-
   box.innerHTML = sorted.map(rec => {
     const idx = catObj.records.indexOf(rec);
     const yearLevel = isOrg() ? db.students.find(student => student.name === rec.name) : null;
-    const rosterMeta = yearLevel ? ` • ${getYearLevelStudentCount(yearLevel)} students` : "";
     const balance = round2(rec.due - rec.paid);
-    let statusLabel, statusColor;
-    if (balance < 0) { statusLabel = "OVERPAID"; statusColor = "#3B6E8F"; }
-    else if (balance === 0) { statusLabel = "PAID"; statusColor = "#2F7D53"; }
-    else if (rec.paid > 0) { statusLabel = "PARTIAL"; statusColor = "#B8872F"; }
-    else { statusLabel = "UNPAID"; statusColor = "#B3423B"; }
-
-    if (isClass()) {
-      if (editingIndex === idx) {
-        const historyHtml = rec.history.length
-          ? rec.history.map((h, hIdx) => `
-              <div class="history-entry">
-                <span>${peso(h.amount)} on ${esc(h.date)}${h.note ? ' • ' + esc(h.note) : ''}</span>
-                <div class="history-actions">
-                  <button class="mini-btn" data-action="edit-hist" data-rec="${idx}" data-hist="${hIdx}">EDIT</button>
-                  <button class="mini-btn mini-delete" data-action="del-hist" data-rec="${idx}" data-hist="${hIdx}">DEL</button>
-                </div>
-              </div>`).join("")
-          : `<div class="note">No payments logged yet.</div>`;
-        return `
-          <div class="item-row editing" id="item-${idx}">
-            <b>${esc(rec.name)}</b>
-            <div class="edit-note">💡 Edit this student's <b>Amount Due</b> and <b>Total Paid</b>. Payment history remains available below.</div>
-            <input type="number" id="edit-due-${idx}" value="${rec.due}" step="0.01" placeholder="Amount Due">
-            <input type="number" id="edit-paid-${idx}" value="${rec.paid}" step="0.01" placeholder="Total Paid">
-            <div class="history-box">
-              <p class="note"><b>Payment History:</b> edit or delete individual entries.</p>
-              ${historyHtml}
-            </div>
-            <div class="item-actions">
-              <button class="btn-save" data-action="save-edit" data-idx="${idx}">SAVE</button>
-              <button class="btn-delete-item" data-action="delete-item" data-idx="${idx}">REMOVE FROM LIST</button>
-              <button class="btn-cancel" data-action="cancel-edit">CANCEL</button>
-            </div>
-          </div>`;
-      }
-      return `
-        <div class="item-row" data-action="edit-item" data-idx="${idx}">
-          <div><b>${esc(rec.name)}</b><br><span class="note">Paid: ${peso(rec.paid)} / ${peso(rec.due)}</span></div>
-          <div style="display:flex; align-items:center; gap:10px; text-align:right;">
-            <span style="color:${statusColor}; font-weight:900;">${peso(balance)}<br><small class="record-status-label">${statusLabel}</small></span>
-            <button class="row-x-btn" data-action="delete-item" data-idx="${idx}" title="Remove student from this collection">X</button>
-          </div>
-        </div>`;
+    
+    let statusLabel, statusColor, statusBadgeBg;
+    if (balance < 0) { 
+      statusLabel = "OVERPAID"; 
+      statusColor = "#3B6E8F"; 
+      statusBadgeBg = "rgba(59, 110, 143, 0.12)";
+    } else if (balance === 0) { 
+      statusLabel = "PAID"; 
+      statusColor = "#2F7D53"; 
+      statusBadgeBg = "rgba(47, 125, 83, 0.12)";
+    } else if (rec.paid > 0) { 
+      statusLabel = "PARTIAL"; 
+      statusColor = "#B8872F"; 
+      statusBadgeBg = "rgba(184, 135, 47, 0.12)";
+    } else { 
+      statusLabel = "UNPAID"; 
+      statusColor = "#B3423B"; 
+      statusBadgeBg = "rgba(179, 66, 59, 0.12)";
     }
 
-
+    // Safely pull database properties out here to prevent nested string breaks
+    const studentCountInt = yearLevel ? getYearLevelStudentCount(yearLevel) : 0;
 
     return `
-      <div class="item-row" data-action="edit-item" data-idx="${idx}">
-          <div><b>${esc(rec.name)}</b><br><span class="note">Paid: ${peso(rec.paid)} / Due: ${peso(rec.due)} • Balance: ${peso(balance)}${rosterMeta}</span></div>
-        <div style="display:flex; align-items:center; gap:10px; text-align:right;">
-          <span style="color:${statusColor}; font-weight:900;">${peso(balance)}</span><br>
-          <span class="record-status-label" style="color:${statusColor};">${statusLabel}</span>
-          <button class="row-x-btn" data-action="delete-item" data-idx="${idx}" title="Remove year level from this collection">X</button>
+      <!-- Main Row Container with absolute clearances enabled -->
+      <div class="item-row" data-action="edit-item" data-idx="${idx}" style="display: flex !important; justify-content: space-between !important; align-items: center !important; padding: 16px !important; margin-bottom: 16px !important; border: 1px solid var(--hairline) !important; border-radius: var(--radius) !important; background: var(--surface) !important; box-shadow: var(--shadow-sm) !important; transition: all 0.2s ease !important; cursor: pointer !important; position: relative !important; overflow: visible !important; z-index: 5 !important; width: 100% !important; box-sizing: border-box !important;">
+        
+        <!-- Left Column: Title and Floating Button Trigger -->
+        <div style="flex: 1 !important; min-width: 0 !important; display: flex !important; flex-direction: column !important; gap: 8px !important; text-align: left !important; position: relative !important; overflow: visible !important; z-index: 10 !important;">
+          <span style="font-size: 19px !important; font-weight: 700 !important; color: var(--ink) !important; display: block !important; margin: 0 !important;">${esc(rec.name)}</span>
+          
+          <!-- Compact Button toggles visibility using pure inline layout rules -->
+          <button type="button" onclick="event.stopPropagation(); const pop = this.nextElementSibling; const row = this.closest('.item-row'); document.querySelectorAll('.item-row').forEach(r => { if(r !== row) { r.style.setProperty('z-index', '5', 'important'); r.querySelector('.floating-status-popover').style.setProperty('display', 'none', 'important'); } }); if(pop.style.display === 'none') { row.style.setProperty('z-index', '9999', 'important'); pop.style.setProperty('display', 'flex', 'important'); } else { row.style.setProperty('z-index', '5', 'important'); pop.style.setProperty('display', 'none', 'important'); }" style="width: auto !important; max-width: max-content !important; padding: 6px 14px !important; font-size: 12px !important; font-weight: 600 !important; color: var(--accent) !important; background: var(--surface-alt) !important; border: 1px solid var(--hairline-strong) !important; border-radius: 6px !important; cursor: pointer !important; display: inline-flex !important; align-items: center !important; gap: 4px !important; box-shadow: var(--shadow-sm) !important; height: auto !important; line-height: 1.2 !important; user-select: none !important;">
+            Show Status
+          </button>
+
+          <!-- ── FLOATING POPOVER LAYER: Buttons completely removed ── -->
+          <div class="floating-status-popover" onclick="event.stopPropagation();" style="display: none !important; position: absolute !important; top: calc(100% + 6px) !important; left: 0px !important; background: var(--surface, #ffffff) !important; width: 250px !important; border: 1px solid var(--hairline-strong, rgba(0,0,0,0.2)) !important; border-radius: var(--radius-sm, 8px) !important; z-index: 999999 !important; box-shadow: 0 10px 30px rgba(0,0,0,0.25) !important; padding: 14px !important; box-sizing: border-box !important; flex-direction: column !important; gap: 12px !important; text-align: left !important;">
+            
+            <!-- Grid Layout labels layout context -->
+            <div style="display: grid !important; grid-template-columns: auto 1fr !important; gap: 6px 14px !important; font-size: 13px !important; color: var(--muted) !important; line-height: 1.4 !important;">
+              <span style="font-weight: 500 !important; color: var(--muted) !important;">Paid:</span>
+              <span style="font-family: 'IBM Plex Mono', monospace !important; font-weight: 600 !important; color: var(--success) !important;">${peso(rec.paid)}</span>
+              
+              <span style="font-weight: 500 !important; color: var(--muted) !important;">Due:</span>
+              <span style="font-family: 'IBM Plex Mono', monospace !important; font-weight: 600 !important; color: var(--ink) !important;">${peso(rec.due)}</span>
+              
+              <span style="font-weight: 500 !important; color: var(--muted) !important;">Balance:</span>
+              <span style="font-family: 'IBM Plex Mono', monospace !important; font-weight: 600 !important; color: ${balance > 0 ? 'var(--danger)' : 'var(--success)'} !important;">${peso(balance)}</span>
+              
+              ${yearLevel ? `
+                <span style="font-weight: 500 !important; color: var(--muted) !important;">Students:</span>
+                <span style="font-weight: 600 !important; color: var(--ink) !important;">${studentCountInt} enrolled</span>
+              ` : ''}
+            </div>
+          </div>
         </div>
+        
+        <!-- Right Column: Permanent Numeric Balance face Indicator Badge & Delete Cross Trigger -->
+        <div style="display: flex !important; align-items: center !important; gap: 14px !important; flex-shrink: 0 !important; text-align: right !important; margin-left: 12px !important; z-index: 10 !important;">
+          <div style="display: flex !important; flex-direction: column !important; align-items: flex-end !important; gap: 2px !important;">
+            <span style="font-size: 17px !important; font-weight: 700 !important; font-family: 'IBM Plex Mono', monospace !important; color: ${statusColor} !important; line-height: 1.1 !important;">${peso(balance)}</span>
+            <span class="record-status-label" style="font-size: 9px !important; font-weight: 700 !important; padding: 2px 6px !important; border-radius: 4px !important; color: ${statusColor} !important; background: ${statusBadgeBg} !important; text-transform: uppercase !important; letter-spacing: 0.5px !important; display: inline-block !important; line-height: 1 !important;">${statusLabel}</span>
+          </div>
+          
+          <button type="button" class="row-x-btn" data-action="delete-item" data-idx="${idx}" title="Remove from collection" style="width: 32px !important; height: 32px !important; min-height: 32px !important; border-radius: 50% !important; background: transparent !important; color: var(--danger) !important; border: 1.5px solid var(--danger) !important; font-size: 13px !important; font-weight: 700 !important; display: flex !important; align-items: center !important; justify-content: center !important; cursor: pointer !important; box-shadow: none !important; padding: 0 !important; transition: all 0.2s ease !important;">✕</button>
+        </div>
+
       </div>`;
   }).join("");
+
+
+
 
 /* ── SINGLE CONTAINER CLICK HANDLER ── */
 /* ── FIXED SINGLE CONTAINER CLICK HANDLER ── */
@@ -3614,13 +3624,43 @@ function openCollectionEdit(index) {
 function renderCollectionEditHistory(record) {
   const box = document.getElementById("collection-edit-history");
   if (!box) return;
+  
   box.innerHTML = record.history.length
     ? record.history.slice().reverse().map((entry, reverseIndex) => {
         const index = record.history.length - 1 - reverseIndex;
-        return `<div class="history-entry"><span>${peso(entry.amount)} on ${esc(entry.date)}${entry.note ? " • " + esc(entry.note) : ""}</span><button class="mini-btn mini-delete" onclick="deleteCollectionEditHistory(${index})">DEL</button></div>`;
+        
+        // ─── CHECK IF MONEY IS IN (+) OR OUT (-) ───
+        const isMoneyOut = entry.amount < 0;
+        const transactionSign = isMoneyOut ? "−" : "+";
+        const transactionColor = isMoneyOut ? "#B3423B" : "#2F7D53"; // Red for Out, Green for In
+        
+        // Format the absolute amount value so we don't duplicate negative symbols on display
+        const displayAmount = peso(Math.abs(entry.amount));
+
+        return `
+          <div class="history-entry" style="display: flex !important; justify-content: space-between !important; align-items: center !important; padding: 12px 14px !important; border-bottom: 1px solid var(--hairline, rgba(0,0,0,0.06)) !important; font-size: 13.5px !important; background: var(--surface, #ffffff) !important; box-sizing: border-box !important; width: 100% !important;">
+            
+            <!-- Left Info Stack: Amount and Subtext metadata details context -->
+            <div style="display: flex !important; flex-direction: column !important; gap: 3px !important; text-align: left !important; flex: 1 !important; min-width: 0 !important;">
+              
+              <!-- Color Coded Amount with In/Out Indicator Sign Symbol -->
+              <span style="color: ${transactionColor} !important; font-weight: 700 !important; font-family: 'IBM Plex Mono', monospace, sans-serif !important; display: flex !important; align-items: center !important; gap: 3px !important;">
+                <span>${transactionSign}</span> ${displayAmount}
+              </span>
+              
+              <span style="font-size: 11.5px !important; color: var(--muted, #666666) !important; line-height: 1.3 !important;">
+                📆 ${esc(entry.date)} ${entry.note ? '• ' + esc(entry.note) : ''}
+              </span>
+            </div>
+            
+            <!-- Aligned Delete Action Controller Box -->
+            <button type="button" class="mini-btn mini-delete" onclick="event.stopPropagation(); deleteCollectionEditHistory(${index})" style="padding: 5px 12px !important; color: #b3423b !important; background: rgba(179, 66, 59, 0.06) !important; border: 1px solid rgba(179, 66, 59, 0.25) !important; border-radius: 4px !important; font-size: 11px !important; font-weight: 700 !important; cursor: pointer !important; flex-shrink: 0 !important; margin-left: 8px !important;">DEL</button>
+          </div>`;
       }).join("")
-    : `<p class="note">No payments logged yet.</p>`;
+    : `<div style="padding: 16px !important; font-size: 13px !important; color: var(--muted, #666666) !important; text-align: center !important; background: var(--surface, #ffffff) !important; width: 100% !important; box-sizing: border-box !important;">No payments logged yet.</div>`;
 }
+
+
 
 function closeCollectionEdit() {
   document.getElementById("collection-edit-modal").classList.add("hidden");
@@ -6948,13 +6988,22 @@ function renderRecordRosterBucket() {
 
 function updateRecordRosterIndicator() {
   const { roster } = getActiveRecordRoster();
-  const paid = roster.filter(student => student.paymentStatus === "paid").length;
-  const text = `${paid} paid / ${roster.length} students`;
+  
+  // 1. Calculate the target metric variables
+  const totalStudents = roster.length;
+  const paidCount = roster.filter(student => student.paymentStatus === "paid").length;
+  const unpaidCount = totalStudents - paidCount;
+  
+  // 2. Format the updated three-part status text
+  const text = `(${paidCount}) paid & (${unpaidCount}) unpaid out of (${totalStudents}) students`;
+  
+  // 3. Update both matching element container targets in the DOM
   ["record-roster-paid-indicator", "record-roster-paid-indicator-full"].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.innerText = text;
   });
 }
+
 
 function toggleRecordRosterPaid(studentId) {
   const { record, roster } = getActiveRecordRoster();
