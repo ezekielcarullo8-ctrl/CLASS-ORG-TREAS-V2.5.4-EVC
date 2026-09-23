@@ -894,11 +894,7 @@
       
       <label id="collection-edit-due-label" class="note" style="display:block; margin-bottom:6px; font-weight:600; color:var(--ink);">Amount per Student</label>
       <input type="number" id="collection-edit-due" step="0.01" placeholder="Amount per Student" style="margin-bottom:16px;">
-      <div id="collection-edit-roster-box" class="roster-amount-box">
-        <button class="full-btn" onclick="openRecordRosterPicker()">+ Add All Students</button>
-        <button class="full-btn btn-cancel" onclick="openRecordRosterBucket()">Open Student Bucket</button>
-        <p id="record-roster-paid-indicator" class="note" style="margin-top:8px; text-align:center;"></p>
-      </div>
+
       
       <label class="note" style="display:block; margin-bottom:6px; font-weight:600; color:var(--ink);">Add Payment</label>
       <div class="row" style="margin-bottom:8px;">
@@ -906,13 +902,82 @@
         <input type="date" id="collection-edit-date" style="margin-bottom:0;">
       </div>
       <input type="text" id="collection-edit-note" placeholder="Payment note (optional)" style="margin-bottom:16px;">
+      <!-- Add Payment Action Button Trigger -->
+      <!-- Add Payment Action Button Trigger -->
       <button class="full-btn" onclick="collectionQuickPay()" style="margin-bottom:16px;">Add Payment</button>
 
-      <label class="note" style="display:block; margin-bottom:6px; font-weight:600; color:var(--ink);">Payment History</label>
-      <div id="collection-edit-history" style="margin-bottom:20px;"></div>
+<!-- COMPACT COLLAPSIBLE DROPDOWN PAYMENT HISTORY ACCORDION CONTAINER -->
+<div class="remittance-history-dropdown-wrapper" style="margin: 16px 0 !important; width: 100% !important; box-sizing: border-box !important; position: relative !important; overflow: visible !important; z-index: 9999 !important;">
+  
+  <!-- Clickable Interactive Header Toggle Trigger Button -->
+  <button type="button" onclick="event.stopPropagation(); const panel = this.nextElementSibling; const arrow = this.querySelector('.drop-arrow'); if(panel.style.display === 'none') { panel.style.setProperty('display', 'block', 'important'); arrow.innerText = '▲'; } else { panel.style.setProperty('display', 'none', 'important'); arrow.innerText = '▼'; }" style="width: 100% !important; display: flex !important; justify-content: space-between !important; align-items: center !important; padding: 14px 16px !important; background: var(--surface-alt, #faf8f5) !important; border: 1px solid var(--hairline-strong, rgba(0,0,0,0.14)) !important; border-radius: 8px !important; cursor: pointer !important; font-size: 14px !important; font-weight: 700 !important; color: var(--ink, #222222) !important; text-align: left !important; user-select: none !important; box-sizing: border-box !important; min-height: 48px !important; box-shadow: var(--shadow-sm) !important;">
+    
+    <!-- Left Layout Content: Icon, Title, and Hint Tag -->
+    <span style="display: inline-flex !important; align-items: center !important; gap: 8px !important; white-space: nowrap !important;">
+      <span style="font-size: 15px !important; line-height: 1 !important;">📁</span>
+      <span style="font-size: 14px !important; font-weight: 700 !important; color: var(--ink, #222222) !important;">Payment History</span>
+      <span style="font-size: 11px !important; color: var(--accent, #3b6e8f) !important; font-weight: 600 !important; opacity: 0.85 !important; background: rgba(59, 110, 143, 0.08) !important; padding: 2px 6px !important; border-radius: 4px !important; margin-left: 4px !important; font-family: sans-serif !important;">tap to view ▾</span>
+    </span>
+    
+    <!-- Right Layout Content: Dynamic State Tracking Dropping Dropdown Arrow Indicator -->
+    <span class="drop-arrow" style="font-size: 12px !important; color: #777777 !important; display: inline-block !important; font-family: sans-serif !important; flex-shrink: 0 !important; margin-left: auto !important; line-height: 1 !important;">▼</span>
+  </button>
+
+  <!-- ── FLOATING POP-OVER DRAWER BOX LAYER CONTAINER (Starts hidden dynamically) ── -->
+  <div id="collection-edit-history" style="display: none !important; position: absolute !important; top: calc(100% + 4px) !important; left: 0px !important; width: 100% !important; max-height: 200px !important; overflow-y: auto !important; box-sizing: border-box !important; background: var(--surface, #ffffff) !important; border: 1px solid var(--hairline-strong, rgba(0,0,0,0.2)) !important; border-radius: 8px !important; z-index: 999999 !important; box-shadow: 0 8px 24px rgba(0,0,0,0.16) !important; padding: 4px 0 !important;">
+    <!-- Your JavaScript function automatically fills this container with history entry lines here -->
+  </div>
+</div>
+
+
+
+
+      
       
       <button class="full-btn" onclick="saveCollectionEdit()" style="margin-top:12px;">Save Changes</button>
       <button class="full-btn btn-cancel" onclick="closeCollectionEdit()">Cancel</button>
+
+      <hr class="section-divider">
+
+<div id="collection-edit-roster-box" class="roster-amount-box" style="border: 1px solid var(--hairline-strong, rgba(0,0,0,0.12)) !important; border-radius: 8px !important; padding: 14px !important; background: var(--surface-alt, #faf8f5) !important; margin-top: 14px !important; box-sizing: border-box !important;">
+  
+  <p style="margin: 0 0 12px 0 !important; font-size: 12.5px !important; color: var(--muted, #666666) !important; line-height: 1.4 !important; text-align: left !important;">
+    💡 <b>Student Management:</b> Use this section to add students and to access their remittance status.
+  </p>
+
+  <!-- Buttons grouped horizontally side-by-side with wrapping auto-clearances -->
+  <div style="display: flex !important; gap: 8px !important; width: 100% !important; margin-bottom: 12px !important; box-sizing: border-box !important;">
+    
+    <!-- Fixed Add (All) Students Button -->
+    <button type="button" onclick="openRecordRosterPicker()" style="flex: 1 !important; min-width: 0 !important; margin: 0 !important; background: #ffffff !important; color: var(--ink, #333333) !important; border: 1px solid var(--hairline-strong, rgba(0,0,0,0.18)) !important; border-radius: 6px !important; padding: 10px 4px !important; font-size: 13px !important; font-weight: 600 !important; cursor: pointer !important; box-shadow: var(--shadow-sm) !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; text-align: center !important; min-height: 42px !important; line-height: 1.2 !important; white-space: normal !important; word-break: break-word !important;">
+      + Add (All) Students
+    </button>
+    
+    <!-- Fixed Open Student Bucket Button -->
+    <button type="button" onclick="openRecordRosterBucket()" style="flex: 1 !important; min-width: 0 !important; margin: 0 !important; background: #ffffff !important; color: var(--ink, #333333) !important; border: 1px solid var(--hairline-strong, rgba(0,0,0,0.18)) !important; border-radius: 6px !important; padding: 10px 4px !important; font-size: 13px !important; font-weight: 600 !important; cursor: pointer !important; box-shadow: var(--shadow-sm) !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; text-align: center !important; min-height: 42px !important; line-height: 1.2 !important; white-space: normal !important; word-break: break-word !important;">
+      Open Student Bucket
+    </button>
+    
+  </div>
+
+  
+  <!-- ── NEW CONTAINER: Holds the dynamic paid, unpaid, and total status fields ── -->
+  <div id="record-roster-paid-indicator" style="margin-top: 12px !important; display: flex !important; justify-content: space-around !important; align-items: center !important; background: var(--surface, #ffffff) !important; padding: 8px !important; border-radius: 6px !important; border: 1px solid var(--hairline, rgba(0,0,0,0.08)) !important;">
+    <!-- JavaScript will dynamically fill this space with rows of data below -->
+  </div>
+</div>
+
+  
+  <!-- Bottom Indicator Context -->
+  <p id="record-roster-paid-indicator" class="note" style="margin: 8px 0 0 0 !important; text-align: center !important; font-size: 12px !important; color: var(--muted) !important; font-weight: 600 !important;"></p>
+</div>
+
+  
+  <!-- Clean Bottom Indicator Context -->
+  <p id="record-roster-paid-indicator" class="note" style="margin: 8px 0 0 0 !important; text-align: center !important; font-size: 12px !important; color: var(--muted) !important; font-weight: 500 !important;"></p>
+</div>
+
+
     </div>
   </div>
 
