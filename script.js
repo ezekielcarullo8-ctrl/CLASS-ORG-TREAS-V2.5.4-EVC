@@ -3919,10 +3919,13 @@ function saveItemEdit(idx) {
     ========================================================================= */
 
   const INCOME_CATEGORIES = [
+    "General Income", // 🌟 ADD THIS FALLBACK ROW
     "Membership Dues", "Event Income", "Sponsorship / Donation",
     "Fundraising", "Reimbursement", "Other Income"
   ];
+  
   const EXPENSE_CATEGORIES = [
+    "General Expense", // 🌟 ADD THIS FALLBACK ROW
     "Supplies & Materials", "Food & Refreshments", "Printing & Documentation",
     "Transportation", "Permits & Fees", "Honorarium / Token",
     "Venue / Rentals", "Other Expense"
@@ -4373,7 +4376,7 @@ function renderCashbookLog() {
     eveAlert("Remittance recorded.");
   }
 
-  function saveTransaction() {
+function saveTransaction() {
     const type = document.getElementById("txn-type").value;
     const dateInput = document.getElementById("txn-date").value;
     const date = dateInput || new Date().toISOString().slice(0, 10);
@@ -4401,12 +4404,26 @@ function renderCashbookLog() {
 
     saveData();
     const wasEdit = !!editId;
-    resetTxnForm();
-    renderCashbookSummary();
-    renderCashbookList();
-    renderProjects();
-    eveAlert(wasEdit ? "Transaction updated." : "Transaction recorded.");
-  }
+    const alertMessage = wasEdit ? "Transaction updated." : "Transaction recorded.";
+
+    // 🌟 STEP A: Call alert with false to run the native smile track
+    eveAlert(alertMessage, false);
+
+    // 🌟 STEP B: Instantly append a success-active class to the speech bubble element
+    const bubble = document.getElementById('speechBubble');
+    if (bubble) {
+      bubble.classList.add('success-active');
+    }
+
+    // 🌟 STEP C: Defer field clears slightly so they don't crash active animations
+    setTimeout(() => {
+      resetTxnForm();
+      renderCashbookSummary();
+      renderCashbookList();
+      renderProjects();
+    }, 50);
+}
+
 
   function editTransactionRow(id) {
     const txn = db.cashbook.transactions.find(t => String(t.id) === String(id));
@@ -5518,9 +5535,15 @@ window.addEventListener("DOMContentLoaded", () => {
   renderProjects();
   loadOrgSettingsForm();
   updateAppHeader();
-  resetTxnForm();
   updateUndoRedoButtons();
+
+  // 🌟 FIX: Defer the internal form text field baseline reset by a fraction 
+  // so it doesn't cross-wire with your active tab initialization layouts
+  setTimeout(() => {
+    resetTxnForm();
+  }, 20);
 });
+
 
 
 /* =========================================================================
@@ -7507,3 +7530,84 @@ function closeClassFundPaymentModal() {
     modal.classList.add("hidden");
   }
 }
+
+
+/* =========================================================================
+   GLOBAL AUTO-CLEAR ON SAVE/SUBMIT INTERCEPTOR
+   ========================================================================= */
+document.addEventListener("click", function (event) {
+  // 1. Identify if the clicked element is a save, confirm, record, or submit button
+  const btn = event.target.closest("button, input[type='submit']");
+  if (!btn) return;
+
+  const btnText = (btn.innerText || btn.value || "").toLowerCase();
+  const btnClass = btn.className.toLowerCase();
+  const onClickAttr = (btn.getAttribute("onclick") || "").toLowerCase();
+
+  // Targets buttons containing save, record, confirm, submit, quick pay, or add
+  const isSaveAction = 
+    btnText.includes("save") || 
+    btnText.includes("record") || 
+    btnText.includes("confirm") || 
+    btnText.includes("submit") || 
+    btnText.includes("pay") ||
+    btnClass.includes("btn-save") ||
+    onClickAttr.includes("save") || 
+    onClickAttr.includes("record") ||
+    onClickAttr.includes("submit");
+
+  // Skip cancel or delete buttons entirely
+  const isExempt = btnText.includes("cancel") || btnText.includes("del") || btnClass.includes("delete");
+
+  if (isSaveAction && !isExempt) {
+    // 2. We use a 100ms delay loop to let your active save functions read the text boxes first
+    setTimeout(() => {
+      // Find the container layer (form, card, or modal section) the button lives in
+      const contextParent = btn.closest(".record-payment-box, .cashbook-record-box, .modal-content, .card, .item-row, .cf-settings, .cf-expense-card, .page");
+      const targetArea = contextParent || document;
+
+      // 3. Select all inputs within this container boundary
+      const inputs = targetArea.querySelectorAll("input:not([type='button']):not([type='submit']):not([type='checkbox']):not([type='radio']), textarea, select");
+      
+      inputs.forEach(input => {
+        // Skip hidden fields (like edit IDs) and keep date pickers persistent so the user doesn't re-type dates
+        if (input.type === "hidden" || input.id.includes("id") || input.type === "date" || input.id.includes("date")) {
+          return;
+        }
+
+        // Safely clear the data channel fields cleanly
+        input.value = "";
+        
+        // Fire a synthetic input event so frameworks or search dropdowns know the field was emptied
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+    }, 100);
+  }
+});
+
+
+  // =========================================================================
+  // GLOBAL CLICK DISMISSER FOR SEARCHABLE DROPDOWNS
+  // =========================================================================
+  window.addEventListener("click", function (event) {
+    function closeIfOutside(searchSelector, dropdownId) {
+      const dropdown = document.getElementById(dropdownId);
+      if (!dropdown) return;
+      
+      const clickedInside = event.target.closest(searchSelector) || event.target.closest(`#${dropdownId}`);
+      if (!clickedInside) {
+        dropdown.classList.remove("show");
+      }
+    }
+
+    // 1. Existing payment and project fields
+    closeIfOutside('#category-search', 'category-list-dropdown');
+    closeIfOutside('#student-search', 'student-list-dropdown');
+    closeIfOutside('#txn-project-search', 'txn-project-dropdown');
+
+    // 2. Remittance Collection dropdown
+    closeIfOutside('#add-remittance-collection-search', 'add-remittance-collection-dropdown');
+
+    // 3. Remittance Year Level dropdown
+    closeIfOutside('#add-remittance-year-level-search', 'add-remittance-year-level-dropdown');
+  });
