@@ -389,9 +389,7 @@ if (countWrapper) countWrapper.classList.toggle('hidden', !isOrg());
   }
 
   // Mode-specific controls
-  document.querySelectorAll('.class-only-filter').forEach(el => {
-    el.classList.toggle('hidden', isOrg());
-  });
+
   const recordsSearch = document.getElementById('item-search');
   if (recordsSearch) recordsSearch.classList.toggle('hidden', isOrg());
   const databaseSearch = document.getElementById('search-students-db');
@@ -775,16 +773,20 @@ function refreshEveSummaryIfVisible() {
     return count > 0 && perStudent > 0 ? round2(count * perStudent) : round2(fallbackAmount);
   }
 
-  // ---------- PAGE SWITCH ----------
-  function switchTab(id, btn) {
+
+function switchTab(id, btn) {
   if (id === 'cashbook-section' && isClass()) return;
   if (id === 'classfund-section' && isOrg()) return;
 
   document.querySelectorAll('.page').forEach(p => p.classList.add('hidden'));
-  document.getElementById(id).classList.remove('hidden');
+  
+  const targetPage = document.getElementById(id);
+  if (targetPage) targetPage.classList.remove('hidden');
+  
   document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
+  if (btn) btn.classList.add('active');
 
+  // ── ROUTING MATRIX EXECUTION CODES ──
   if (id === 'inventory-section') {
     backToCategories();
   } else if (id === 'database-section') {
@@ -802,8 +804,15 @@ function refreshEveSummaryIfVisible() {
   } else if (id === 'summary-section') {
     loadOrgSettingsForm();
     renderSummary();
+  } else if (id === 'backup-section' || id === 'summary-section') {
+    // CRITICAL FIX: Programmatically forces the text calculation to run 
+    // when clicking either the Summary or Backup navigation buttons.
+    renderSummary(); 
   }
 }
+
+
+
   
 
   // ================= STUDENTS (PERMANENT DATABASE) =================
@@ -1315,20 +1324,120 @@ const ClassFundEditor = {
   setFieldValue(id, val) { const el = document.getElementById(id); if (el) el.value = val; }
 };
 
-function openCfLedgerEdit(type, p1, p2) {
-  ClassFundEditor.open(type, p1, p2);
-}
+/* ── REPLACES the entire ClassFundEditor object + wrapper ── */
 
+function openCfLedgerEdit(type, a, b) {
+  const modal = document.getElementById('cf-ledger-edit-modal');
+  if (!modal) return;
+  const typeLabel  = document.getElementById('cf-ledger-edit-type');
+  const descLabel  = document.getElementById('cf-ledger-edit-desc-label');
+  const descInput  = document.getElementById('cf-ledger-edit-desc');
+  const dateInput  = document.getElementById('cf-ledger-edit-date');
+  const amountInput= document.getElementById('cf-ledger-edit-amount');
+  const noteInput  = document.getElementById('cf-ledger-edit-note');
 
+  if (type === 'income') {
+    const name = a, histIdx = b;
+    const rec = db.classFund.records[name];
+    if (!rec || !rec.history[histIdx]) return eveAlert("Couldn't find that payment entry.", true);
+    const entry = rec.history[histIdx];
 
+    cfLedgerEditing = { type: 'income', student: name, histIdx, id: entry.id || null };
+    if (typeLabel) { typeLabel.innerText = "Income • Student Payment"; typeLabel.style.color = "var(--success)"; }
+    if (descLabel) descLabel.innerText = "Student";
+    if (descInput) { descInput.value = name; descInput.disabled = true; }
+    if (dateInput) dateInput.value = entry.date || "";
+    if (amountInput) amountInput.value = entry.amount;
+    if (noteInput) noteInput.value = entry.note || "";
+  } else {
+    const id = a;
+    const txn = (db.classFund.transactions || []).find(t => String(t.id) === String(id));
+    if (!txn) return eveAlert("Couldn't find that expense entry.", true);
 
-
-  function closeCfLedgerEdit() {
-    const modal = document.getElementById('cf-ledger-edit-modal');
-    if (modal) modal.classList.add('hidden');
-    cfLedgerEditing = { type: null, student: null, histIdx: null, id: null };
+    cfLedgerEditing = { type: 'expense', student: null, histIdx: null, id };
+    if (typeLabel) { typeLabel.innerText = "Expense"; typeLabel.style.color = "var(--danger)"; }
+    if (descLabel) descLabel.innerText = "Description";
+    if (descInput) { descInput.value = txn.description || ""; descInput.disabled = false; }
+    if (dateInput) dateInput.value = txn.date || "";
+    if (amountInput) amountInput.value = txn.amount;
+    if (noteInput) noteInput.value = txn.note || "";
   }
 
+  modal.classList.remove('hidden');
+}
+
+function closeCfLedgerEdit() {
+  const modal = document.getElementById('cf-ledger-edit-modal');
+  if (modal) modal.classList.add('hidden');
+  cfLedgerEditing = { type: null, student: null, histIdx: null, id: null };
+}
+
+function saveCfLedgerEdit() {
+  if (!cfLedgerEditing.type) return;
+  const dateVal = document.getElementById('cf-ledger-edit-date').value;
+  const amount  = round2(parseFloat(document.getElementById('cf-ledger-edit-amount').value) || 0);
+  const note    = document.getElementById('cf-ledger-edit-note').value.trim();
+  const desc    = document.getElementById('cf-ledger-edit-desc').value.trim();
+
+  if (!dateVal) return eveAlert("Please select a date.", true);
+  if (amount <= 0) return eveAlert("Please enter a valid amount.", true);
+
+  if (cfLedgerEditing.type === 'income') {
+    const rec = db.classFund.records[cfLedgerEditing.student];
+    if (!rec || !rec.history[cfLedgerEditing.histIdx]) return eveAlert("That payment entry no longer exists.", true);
+    const entry = rec.history[cfLedgerEditing.histIdx];
+    entry.amount = amount;
+    entry.date = dateVal;
+    entry.note = note;
+    rec.paid = round2(rec.history.reduce((sum, h) => sum + (Number(h.amount) || 0), 0));
+
+    if (entry.id && Array.isArray(db.cashbook.transactions)) {
+      const cbRow = db.cashbook.transactions.find(t => String(t.id) === String(entry.id));
+      if (cbRow) { cbRow.amount = amount; cbRow.date = dateVal; }
+    }
+  } else {
+    const txn = (db.classFund.transactions || []).find(t => String(t.id) === String(cfLedgerEditing.id));
+    if (!txn) return eveAlert("That expense entry no longer exists.", true);
+    if (!desc) return eveAlert("Please enter a description.", true);
+    txn.date = dateVal;
+    txn.amount = amount;
+    txn.note = note;
+    txn.description = desc;
+  }
+
+  saveData();
+  closeCfLedgerEdit();
+  renderClassFund();
+  syncCfStudentsOverlay();
+  syncCfLedgerOverlay();
+  eveAlert("Transaction updated.");
+}
+
+function deleteCfLedgerEdit() {
+  if (!cfLedgerEditing.type) return;
+  if (!confirm("Delete this transaction? This cannot be undone.")) return;
+
+  if (cfLedgerEditing.type === 'income') {
+    const rec = db.classFund.records[cfLedgerEditing.student];
+    if (rec && rec.history[cfLedgerEditing.histIdx]) {
+      const removed = rec.history.splice(cfLedgerEditing.histIdx, 1)[0];
+      rec.paid = round2(rec.history.reduce((sum, h) => sum + (Number(h.amount) || 0), 0));
+      if (removed?.id) {
+        db.cashbook.transactions = (db.cashbook.transactions || []).filter(t => String(t.id) !== String(removed.id));
+      }
+    }
+  } else {
+    db.classFund.transactions = (db.classFund.transactions || []).filter(t => String(t.id) !== String(cfLedgerEditing.id));
+    db.cashbook.transactions  = (db.cashbook.transactions  || []).filter(t => String(t.id) !== String(cfLedgerEditing.id));
+  }
+
+  saveData();
+  closeCfLedgerEdit();
+  renderClassFund();
+  syncCfStudentsOverlay();
+  syncCfLedgerOverlay();
+  eveAlert("Transaction deleted.");
+}
 
 
 
@@ -1467,7 +1576,6 @@ function renderClassFund() {
     weekInfo.style.color = cf.startDate ? "var(--accent)" : "var(--muted)";
   }
 
-  // Totals computed from ALL enrolled students independent of search filters
   const allStudents = Object.keys(cf.records || {}).sort();
   let totalExpected = 0, totalPaid = 0, missedCount = 0;
   allStudents.forEach(name => {
@@ -1482,13 +1590,11 @@ function renderClassFund() {
   const searchTerm = searchInput ? (searchInput.value || "").toLowerCase() : "";
   if (searchTerm) students = students.filter(n => n.toLowerCase().includes(searchTerm));
 
-  // Expenses from class fund transactions
   const totalExpenses = round2((cf.transactions || [])
     .filter(t => t.type === "expense")
     .reduce((s, t) => s + (Number(t.amount) || 0), 0));
   const netBalance = round2(totalPaid - totalExpenses);
 
-  // Summary cards
   summary.innerHTML = `
     <div class="summary-card"><h4>Total Collected</h4><p style="color:var(--success)">${peso(totalPaid)}</p></div>
     <div class="summary-card"><h4>Total Expenses</h4><p style="color:var(--danger)">${peso(totalExpenses)}</p></div>
@@ -1511,7 +1617,6 @@ function renderClassFund() {
   const countEl = document.getElementById("cf-count");
   if (countEl) countEl.innerText = `${students.length} student(s) shown • ${allStudents.length} enrolled in Class Fund`;
 
-  // --- Student Cards (FIXED BLOCK LAYOUT) ---
   if (students.length === 0) {
     box.innerHTML = `<p class="note">No students enrolled yet. Tap <b>+ Add All Students</b> above, or make sure students exist in the <b>Students</b> tab.</p>`;
   } else {
@@ -1523,80 +1628,56 @@ function renderClassFund() {
       const missed = getMissedWeeks(name);
       const balance = round2(expected - rec.paid);
       const lastPay = getLastPaymentDate(name);
-      const isActiveStudent = db.students.some(s => s.name === name);
       const safeId = encodeURIComponent(name);
       const isExpanded = cfExpandedNames.has(name);
-
-      let statusBadge = "";
-      if (missed > 2) statusBadge = `<span class="cf-badge cf-badge-danger">${missed} weeks missed</span>`;
-      else if (missed > 0) statusBadge = `<span class="cf-badge cf-badge-warn">${missed} week${missed > 1 ? 's' : ''} missed</span>`;
-      else if (balance < 0) statusBadge = `<span class="cf-badge cf-badge-info">Overpaid</span>`;
-      else statusBadge = `<span class="cf-badge cf-badge-success">All Paid</span>`;
-
       const lastPayText = lastPay ? `Last paid: ${formatDisplayDate(lastPay)}` : "Never paid";
       const progressPct = expected > 0 ? Math.min(100, (rec.paid / expected) * 100) : 0;
-      const progressColor = balance > 0
-        ? 'linear-gradient(90deg, var(--warning), var(--danger))'
-        : 'linear-gradient(90deg, var(--success), var(--accent))';
 
-      /* =========================================================================
-   PIECE 2: ALIGNED CARD LAYOUT STRUCTURE (EDIT BUTTON COMPLETELY REMOVED)
-   ========================================================================= */
-/* =========================================================================
-   PIECE 2: UNIFIED COLLAPSIBLE DETAIL DRAW MATRIX
-   ========================================================================= */
-/* =========================================================================
-   1. CORRECTED MARKUP Blueprint FOR MAIN SCREEN (renderClassFund)
-   ========================================================================= */
-return `
-  <div class="cf-student-card ${isExpanded ? 'expanded' : ''}" id="cf-card-${safeId}" data-cf-name="${esc(name)}">
-    <div class="cf-card-header-row">
-      
-        <div class="cf-name-badge-line">
-          <span class="cf-student-title-name">${esc(name)}</span>
-          <span class="cf-badge-minimal ${balance > 0 ? 'badg-warn' : 'badg-ok'}">${balance > 0 ? missed + ' weeks missed' : 'All Paid'}</span>
-        </div>
-        <div class="cf-minimal-subtext">${lastPayText}</div>
-      </div>
-      <div class="cf-card-metrics-block">
-        <div class="cf-monospaced-bold-text ${balance > 0 ? 'txt-danger' : 'txt-success'}">${peso(rec.paid)}</div>
-        <div class="cf-minimal-subtext">of ${peso(expected)}</div>
-        ${balance > 0 ? `<div class="cf-debt-indicator-line">-${peso(balance)}</div>` : ''}
-      </div>
-    </div>
-
-    <div class="cf-details" id="cf-details-${safeId}" onclick="event.stopPropagation()" style="display:${isExpanded ? 'block' : 'none'}; width:100%;">
-      <div class="minimal-progress-bar-container">
-        <div class="minimal-progress-bar-fill" style="width:${progressPct}%; background:${balance > 0 ? '#b8872f' : '#166534'};"></div>
-      </div>
-      
-      <!-- FIXED: Centered wrapper container mapping to small outline buttons -->
-      <div class="cf-payment-action-row-block">
-        <button type="button" class="cf-minimalist-action-btn-trigger" data-action="add-pay">+ Add Payment</button>
-      </div>
-      
-      <!-- FIXED: Borderless ultra-thin chronological layout folder scroller -->
-      ${rec.history.length > 0 ? `
-        <div class="cf-minimalist-history-box-scroller">
-          ${rec.history.map((h, hIdx) => `
-            <div class="cf-minimalist-history-entry-row">
-              <span class="cf-history-entry-log-text"><b>${peso(h.amount)}</b> on ${esc(formatDisplayDate(h.date))}</span>
-              <div class="cf-history-entry-actions-group">
-                <button type="button" class="cf-minimalist-del-action-btn" data-action="delete-pay" data-idx="${hIdx}">DEL</button>
+      return `
+        <div class="cf-student-card ${isExpanded ? 'expanded' : ''}" id="cf-card-${safeId}" data-cf-name="${esc(name)}">
+          <div class="cf-card-header-row" style="display:flex; justify-content:space-between; align-items:center; width:100%;">
+            <div>
+              <div class="cf-name-badge-line" style="display:flex; align-items:center; gap:8px;">
+                <span class="cf-student-title-name" style="font-weight:700;">${esc(name)}</span>
+                <span class="cf-badge-minimal ${balance > 0 ? 'badg-warn' : 'badg-ok'}">${balance > 0 ? missed + ' weeks missed' : 'All Paid'}</span>
               </div>
+              <div class="cf-minimal-subtext note">${lastPayText}</div>
             </div>
-          `).reverse().join("")}  
+            <div class="cf-card-metrics-block" style="text-align:right;">
+              <div class="cf-monospaced-bold-text ${balance > 0 ? 'txt-danger' : 'txt-success'}" style="font-weight:700;">${peso(rec.paid)}</div>
+              <div class="cf-minimal-subtext note">of ${peso(expected)}</div>
+              ${balance > 0 ? `<div class="cf-debt-indicator-line" style="color:var(--danger); font-size:11px;">-${peso(balance)}</div>` : ''}
+            </div>
+          </div>
+
+          <div class="cf-details" id="cf-details-${safeId}" onclick="event.stopPropagation()" style="display:${isExpanded ? 'block' : 'none'}; width:100%; margin-top:12px;">
+            <div class="minimal-progress-bar-container" style="background:rgba(0,0,0,0.05); height:6px; border-radius:3px; overflow:hidden; margin-bottom:10px;">
+              <div class="minimal-progress-bar-fill" style="width:${progressPct}%; background:${balance > 0 ? '#b8872f' : '#166534'}; height:100%;"></div>
+            </div>
+            
+            <div class="cf-payment-action-row-block">
+              <button type="button" class="cf-minimalist-action-btn-trigger" onclick="openClassFundPaymentModal('${esc(name)}')">+ Add Payment</button>
+            </div>
+            
+            ${rec.history.length > 0 ? `
+              <div class="cf-minimalist-history-box-scroller">
+                ${rec.history.map((h, hIdx) => `
+                  <div class="cf-minimalist-history-entry-row">
+                    <span class="cf-history-entry-log-text"><b>${peso(h.amount)}</b> on ${esc(formatDisplayDate(h.date))}</span>
+                    <div class="cf-history-entry-actions-group">
+                      <button type="button" class="cf-minimalist-del-action-btn" onclick="deleteClassFundPayment('${esc(name)}', ${hIdx})">DEL</button>
+                    </div>
+                  </div>
+                `).reverse().join("")}  
+              </div>
+            ` : ''}
+          </div>
         </div>
-      ` : ''}
-    </div>
-  </div>
-`;
-
-
-
+      `;
     }).join("");
   }
-  // --- Class Fund Ledger Chronological Process Engine ---
+
+  // --- Class Fund Ledger Section ---
   if (txnBox) {
     const incomeEntries = [];
     Object.entries(cf.records || {}).forEach(([name, rec]) => {
@@ -1672,6 +1753,7 @@ return `
   syncCfStudentsOverlay();
   syncCfLedgerOverlay();
 }
+
 
 
 function openCfStudentsOverlay() {
@@ -2800,13 +2882,44 @@ function openCollectionRemittanceManager(categoryName) {
     }
   }
 
-  function deleteCat(cat) {
-    if (confirm(`Delete collection "${cat}" and ALL its payment records? This cannot be undone.`)) {
-      delete db.categories[cat];
-      saveData();
-      renderCategories();
+function deleteCat(cat) {
+  if (confirm(`Delete collection "${cat}" and ALL its payment records? This will also automatically delete all linked transactions in the Cashbook ledger. This cannot be undone.`)) {
+    
+    // 1. Cascade delete linked records from the Cash Book ledger
+    if (db.cashbook && Array.isArray(db.cashbook.transactions)) {
+      db.cashbook.transactions = db.cashbook.transactions.filter(t => {
+        // Remove if transaction category explicitly matches the deleted collection name
+        const matchCategory = String(t.category).toLowerCase() === String(cat).toLowerCase();
+        
+        // Remove if the collection name is embedded in the auto-generated description field
+        const matchDescription = t.description && t.description.includes(cat);
+        
+        return !(matchCategory || matchDescription);
+      });
     }
+
+    // 2. Erase any inter-collection fund transfers linked to this category
+    if (Array.isArray(db.transfers)) {
+      db.transfers = db.transfers.filter(t => t.from !== cat && t.to !== cat);
+    }
+
+    // 3. Delete the category itself from the database objects
+    delete db.categories[cat];
+    
+    // 4. Commit changes down to localStorage and refresh all dashboard layouts
+    saveData();
+    renderCategories();
+    renderCashbookSummary();
+    renderCashbookList();
+    renderSummary();
+    
+    if (typeof renderCashbookLog === "function") renderCashbookLog();
+    if (typeof generateStatement === "function") generateStatement();
+    
+    eveAlert(`Collection "${cat}" and all its linked transactions have been permanently cleared.`);
   }
+}
+
 
   // ---------- ITEM (STUDENT RECORD) VIEW ----------
   function showItems(cat) {
@@ -3819,27 +3932,212 @@ function saveItemEdit(idx) {
     document.getElementById("type-income-btn").classList.toggle("selected-income", type === "income");
     document.getElementById("type-expense-btn").classList.toggle("selected-expense", type === "expense");
 
-    const catSelect = document.getElementById("txn-category");
-    const prevValue = catSelect.value;
-    const cats = type === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
-    catSelect.innerHTML = cats.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join("");
-    if (cats.includes(prevValue)) catSelect.value = prevValue;
+
   }
 
-  function resetTxnForm() {
-    document.getElementById("txn-edit-id").value = "";
-    document.getElementById("txn-date").value = new Date().toISOString().slice(0, 10);
-    document.getElementById("txn-or").value = "";
-    document.getElementById("txn-description").value = "";
-    document.getElementById("txn-amount").value = "";
-    document.getElementById("txn-project-search").value = "";
-    document.getElementById("txn-project-select").value = "";
-    document.getElementById("txn-notes").value = "";
-    document.getElementById("txn-cancel-btn").style.display = "none";
-    document.getElementById("txn-delete-btn").style.display = "none";
-    document.getElementById("txn-form-title").innerText = "Record Transaction";
-    setTxnType("income");
+function renderClassFund() {
+  const box = document.getElementById("classfund-list");
+  const summary = document.getElementById("classfund-summary");
+  const alertBox = document.getElementById("cf-missed-alert");
+  const weekInfo = document.getElementById("cf-week-info");
+  const txnBox = document.getElementById("cf-txn-log");
+  if (!box || !summary) return;
+
+  const cf = db.classFund;
+  const weekly = cf.weeklyDue || 0;
+
+  // Sync settings inputs
+  const wInput = document.getElementById("cf-weekly-due");
+  const sInput = document.getElementById("cf-start-date");
+  if (wInput && (!wInput.value || wInput.value == "0")) wInput.value = weekly > 0 ? weekly : "";
+  if (sInput && !sInput.value && cf.startDate) sInput.value = cf.startDate;
+
+  const currentWeek = getExpectedWeeks(cf.startDate);
+  if (weekInfo) {
+    weekInfo.innerText = cf.startDate
+      ? `Current Collection Week: Week ${currentWeek} • Weekly Due: ${peso(weekly)}`
+      : "Set your weekly due and start date above to begin tracking.";
+    weekInfo.style.color = cf.startDate ? "var(--accent)" : "var(--muted)";
   }
+
+  const allStudents = Object.keys(cf.records || {}).sort();
+  let totalExpected = 0, totalPaid = 0, missedCount = 0;
+  allStudents.forEach(name => {
+    totalExpected += getClassFundExpected(name);
+    totalPaid += cf.records[name].paid || 0;
+    missedCount += getMissedWeeks(name);
+  });
+  const totalUnpaid = round2(totalExpected - totalPaid);
+
+  let students = allStudents;
+  const searchInput = document.getElementById("cf-overlay-search") || document.getElementById("cf-search");
+  const searchTerm = searchInput ? (searchInput.value || "").toLowerCase() : "";
+  if (searchTerm) students = students.filter(n => n.toLowerCase().includes(searchTerm));
+
+  const totalExpenses = round2((cf.transactions || [])
+    .filter(t => t.type === "expense")
+    .reduce((s, t) => s + (Number(t.amount) || 0), 0));
+  const netBalance = round2(totalPaid - totalExpenses);
+
+  summary.innerHTML = `
+    <div class="summary-card"><h4>Total Collected</h4><p style="color:var(--success)">${peso(totalPaid)}</p></div>
+    <div class="summary-card"><h4>Total Expenses</h4><p style="color:var(--danger)">${peso(totalExpenses)}</p></div>
+    <div class="summary-card"><h4>Net Balance</h4><p style="color:${netBalance < 0 ? 'var(--danger)' : 'var(--accent-dark)'}">${peso(netBalance)}</p></div>
+    <div class="summary-card"><h4>Enrolled</h4><p>${allStudents.length}</p></div>
+  `;
+
+  if (missedCount > 0 && totalUnpaid > 0) {
+    alertBox.innerHTML = `
+      <div class="missed-box">
+        <h4>⚠ Collection Alert</h4>
+        <p>${missedCount} total missed week(s) across all students</p>
+        <span class="note">Unpaid student balance: ${peso(totalUnpaid)}</span>
+      </div>
+    `;
+  } else {
+    alertBox.innerHTML = "";
+  }
+
+  const countEl = document.getElementById("cf-count");
+  if (countEl) countEl.innerText = `${students.length} student(s) shown • ${allStudents.length} enrolled in Class Fund`;
+
+  if (students.length === 0) {
+    box.innerHTML = `<p class="note">No students enrolled yet. Tap <b>+ Add All Students</b> above, or make sure students exist in the <b>Students</b> tab.</p>`;
+  } else {
+    box.innerHTML = students.map(name => {
+      const rec = cf.records[name] || (cf.records[name] = { paid: 0, history: [] });
+      rec.paid = Number(rec.paid) || 0;
+      rec.history = Array.isArray(rec.history) ? rec.history : [];
+      const expected = getClassFundExpected(name);
+      const missed = getMissedWeeks(name);
+      const balance = round2(expected - rec.paid);
+      const lastPay = getLastPaymentDate(name);
+      const safeId = encodeURIComponent(name);
+      const isExpanded = cfExpandedNames.has(name);
+      const lastPayText = lastPay ? `Last paid: ${formatDisplayDate(lastPay)}` : "Never paid";
+      const progressPct = expected > 0 ? Math.min(100, (rec.paid / expected) * 100) : 0;
+
+      return `
+        <div class="cf-student-card ${isExpanded ? 'expanded' : ''}" id="cf-card-${safeId}" data-cf-name="${esc(name)}">
+          <div class="cf-card-header-row" style="display:flex; justify-content:space-between; align-items:center; width:100%;">
+            <div>
+              <div class="cf-name-badge-line" style="display:flex; align-items:center; gap:8px;">
+                <span class="cf-student-title-name" style="font-weight:700;">${esc(name)}</span>
+                <span class="cf-badge-minimal ${balance > 0 ? 'badg-warn' : 'badg-ok'}">${balance > 0 ? missed + ' weeks missed' : 'All Paid'}</span>
+              </div>
+              <div class="cf-minimal-subtext note">${lastPayText}</div>
+            </div>
+            <div class="cf-card-metrics-block" style="text-align:right;">
+              <div class="cf-monospaced-bold-text ${balance > 0 ? 'txt-danger' : 'txt-success'}" style="font-weight:700;">${peso(rec.paid)}</div>
+              <div class="cf-minimal-subtext note">of ${peso(expected)}</div>
+              ${balance > 0 ? `<div class="cf-debt-indicator-line" style="color:var(--danger); font-size:11px;">-${peso(balance)}</div>` : ''}
+            </div>
+          </div>
+
+          <div class="cf-details" id="cf-details-${safeId}" onclick="event.stopPropagation()" style="display:${isExpanded ? 'block' : 'none'}; width:100%; margin-top:12px;">
+            <div class="minimal-progress-bar-container" style="background:rgba(0,0,0,0.05); height:6px; border-radius:3px; overflow:hidden; margin-bottom:10px;">
+              <div class="minimal-progress-bar-fill" style="width:${progressPct}%; background:${balance > 0 ? '#b8872f' : '#166534'}; height:100%;"></div>
+            </div>
+            
+            <div class="cf-payment-action-row-block">
+              <button type="button" class="cf-minimalist-action-btn-trigger" onclick="openClassFundPaymentModal('${esc(name)}')">+ Add Payment</button>
+            </div>
+            
+            ${rec.history.length > 0 ? `
+              <div class="cf-minimalist-history-box-scroller">
+                ${rec.history.map((h, hIdx) => `
+                  <div class="cf-minimalist-history-entry-row">
+                    <span class="cf-history-entry-log-text"><b>${peso(h.amount)}</b> on ${esc(formatDisplayDate(h.date))}</span>
+                    <div class="cf-history-entry-actions-group">
+                      <button type="button" class="cf-minimalist-del-action-btn" onclick="deleteClassFundPayment('${esc(name)}', ${hIdx})">DEL</button>
+                    </div>
+                  </div>
+                `).reverse().join("")}  
+              </div>
+            ` : ''}
+          </div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  // --- Class Fund Ledger Section ---
+  if (txnBox) {
+    const incomeEntries = [];
+    Object.entries(cf.records || {}).forEach(([name, rec]) => {
+      (rec.history || []).forEach((h, idx) => {
+        incomeEntries.push({
+          sortKey: `${h.date || "0000-00-00"}-INC-${String(idx).padStart(4, '0')}-${name}`,
+          type: "income",
+          date: h.date,
+          description: `Payment from ${name}`,
+          amount: h.amount,
+          note: h.note || "",
+          student: name,
+          histIdx: idx,
+          deletable: false
+        });
+      });
+    });
+
+    const expenseEntries = (cf.transactions || [])
+      .filter(t => t.type === "expense")
+      .map(t => ({
+        sortKey: `${t.date || "0000-00-00"}-EXP-${t.id}`,
+        ...t,
+        deletable: true
+      }));
+
+    const allTxns = [...incomeEntries, ...expenseEntries].sort((a, b) =>
+      a.sortKey.localeCompare(b.sortKey)
+    );
+
+    let running = 0;
+    const withBal = allTxns.map(t => {
+      running = round2(running + (t.type === "income" ? t.amount : -t.amount));
+      return { ...t, balance: running };
+    }).reverse();
+
+    if (withBal.length === 0) {
+      txnBox.innerHTML = `<p class="note">No transactions yet. Record student payments or expenses above.</p>`;
+    } else {
+      txnBox.innerHTML = withBal.map(t => {
+        const sign = t.type === "income" ? "+" : "−";
+        const color = t.type === "income" ? "var(--success)" : "var(--danger)";
+        const clickAttrs = t.type === "income"
+          ? `data-cf-type="income" data-cf-student="${esc(t.student)}" data-cf-histidx="${t.histIdx}"`
+          : `data-cf-type="expense" data-cf-id="${esc(t.id)}"`;
+
+        return `
+          <div class="item-row" ${clickAttrs} style="background:#fff; padding:12px 14px; border-bottom:1px solid rgba(0,0,0,0.05); display:flex; justify-content:space-between; align-items:center; cursor:pointer;">
+            <div style="text-align:left;">
+              <b style="color:#1F2A24 !important;">${esc(t.description)}</b><br>
+              <span class="note" style="color:#55625A !important; font-size:12px;">${esc(t.date)}${t.note ? ' • ' + esc(t.note) : ''}</span>
+            </div>
+            <div style="text-align:right;">
+              <span style="color:${color}; font-weight:700; font-family:'IBM Plex Mono',monospace;">${sign}${peso(t.amount)}</span><br>
+              <span class="note" style="color:#55625A !important; font-size:11px;">Bal: ${peso(t.balance)}</span>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      txnBox.querySelectorAll('[data-cf-type]').forEach(el => {
+        el.addEventListener('click', () => {
+          if (el.dataset.cfType === 'income') {
+            openCfLedgerEdit('income', el.dataset.cfStudent, parseInt(el.dataset.cfHistidx, 10));
+          } else {
+            openCfLedgerEdit('expense', el.dataset.cfId);
+          }
+        });
+      });
+    }
+  }
+
+  syncCfStudentsOverlay();
+  syncCfLedgerOverlay();
+}
+
 
   let cashbookLogKind = "all";
   let cashbookEditingId = null;
@@ -4078,8 +4376,8 @@ function renderCashbookLog() {
     const type = document.getElementById("txn-type").value;
     const dateInput = document.getElementById("txn-date").value;
     const date = dateInput || new Date().toISOString().slice(0, 10);
-    const orNumber = document.getElementById("txn-or").value.trim();
-    const category = document.getElementById("txn-category").value;
+    const orNumber = "";
+    const category = type === "income" ? "General Income" : "General Expense";
     const description = document.getElementById("txn-description").value.trim();
     const amount = round2(parseFloat(document.getElementById("txn-amount").value) || 0);
     const projectId = document.getElementById("txn-project-select").value || null;
@@ -4331,29 +4629,28 @@ function deleteCashbookEdit() {
 function computeCashbookTotals() {
   const opening = db.cashbook.openingBalance || 0;
   
-  // 1. Total Income from standard manually recorded entries (excluding automated remittance categories)
+  // 1. Total Income from standard manually filled transactions form fields
   const totalIncome = round2(
     db.cashbook.transactions
       .filter(t => t.type === "income" && t.category !== "Year-Level Remittance" && t.category !== "Year Levels Payment")
       .reduce((s, t) => s + (Number(t.amount) || 0), 0)
   );
   
-  // 2. Total Expenses from standard manually recorded entries
+  // 2. Total Expenses from standard manually filled transactions form fields
   const totalExpense = round2(
     db.cashbook.transactions
       .filter(t => t.type === "expense")
       .reduce((s, t) => s + (Number(t.amount) || 0), 0)
   );
 
-  // 3. Base Total Remits captures incoming collections entries
-  const totalIncomingRemits = round2(
+  // 3. Base Total Remits captures all initial un-adjusted entries
+  let totalRemits = round2(
     db.cashbook.transactions
-      .filter(t => (t.type === "remittance" || t.category === "Year-Level Remittance") && 
-                  !String(t.description).includes("Turnover of all collected funds"))
+      .filter(t => t.type === "remittance" || t.category === "Year-Level Remittance" || t.category === "Year-Level Remittance Logs")
       .reduce((s, t) => s + (Number(t.amount) || 0), 0)
   );
 
-  // 4. Calculate total money attached to active categories currently marked as "remitted"
+  // 4. Calculate total money attached to collections marked as "remitted"
   let totalDeductedRemittances = 0;
   Object.keys(db.categories).forEach(catName => {
     if (db.categories[catName].remittanceStatus === "remitted") {
@@ -4362,23 +4659,21 @@ function computeCashbookTotals() {
     }
   });
 
-  // 🔴 FIXED REMITS CARD MATH: Set card equal to active incoming remits minus what left your hands
-  const totalRemits = round2(totalIncomingRemits - totalDeductedRemittances);
+  // Subtract the turned-over money from the Total Remitted overview metric card
+  totalRemits = round2(totalRemits - totalDeductedRemittances);
 
-  // 5. Calculate net operational cash movement parameters
-  const totalManualIncomeAndRemits = round2(
+  // 5. Calculate net incoming items streams safely
+  const netIncomeAndRemits = round2(
     db.cashbook.transactions
-      .filter(t => (t.type === "remittance" || t.type === "income") && 
-                  !String(t.description).includes("Turnover of all collected funds"))
+      .filter(t => t.type === "remittance" || t.type === "income")
       .reduce((s, t) => s + (Number(t.amount) || 0), 0)
   );
 
-  // 🔴 FIXED CASH ON HAND MATH: Deduct the turned-over sum cleanly out of your active wallet balance parameters
-  const cashOnHand = round2(opening + totalManualIncomeAndRemits - totalExpense - totalDeductedRemittances);
+  // Subtract the turned-over money from the live wallet balance directly 
+  const cashOnHand = round2(opening + netIncomeAndRemits - totalExpense - totalDeductedRemittances);
 
   return { opening, totalIncome, totalExpense, totalRemits, cashOnHand };
 }
-
 
 
 
@@ -4597,25 +4892,17 @@ function renderCashbookList() {
 function showProjectsView() {
   // Hide the normal Cash Book content
   document.getElementById("cashbook-main-view")?.classList.add("hidden");
-
-  // Hide Record Transaction
+  
+  // 🚫 THIS IS REMOVING YOUR RECORD TRANSACTION FORMS AND BUTTONS!
   document.querySelector(".cashbook-record-box")?.classList.add("hidden");
-
-  // Hide Organization Info / Financial Statement
   document.getElementById("financial-statement-section")?.classList.add("hidden");
+  document.querySelector(".cashbook-record-box")?.previousElementSibling?.classList.add("hidden");
 
-  // Hide divider before the transaction form
-  document.querySelector(".cashbook-record-box")
-    ?.previousElementSibling?.classList.add("hidden");
-
-  // Hide project detail
   document.getElementById("project-detail-view")?.classList.add("hidden");
-
-  // Show Projects & Events
   document.getElementById("projects-view")?.classList.remove("hidden");
-
   renderProjects();
 }
+
 
 function hideProjectsView() {
   // Hide Projects & Events
@@ -5058,46 +5345,96 @@ async function exportStatementImage() {
   }
 }
 
-  // ================= SUMMARY TAB =================
-  function renderSummary() {
-  // Backup reminder
+function renderSummary() {
   const statusEl = document.getElementById("backup-status");
   const lastBackup = localStorage.getItem("lastBackupTime");
-  if (!lastBackup) {
-    statusEl.innerText = "⚠ You have never backed up your data yet.";
-    statusEl.style.color = "#B3423B";
-  } else {
-    const days = Math.floor((Date.now() - parseInt(lastBackup, 10)) / (1000 * 60 * 60 * 24));
-    if (days <= 0) {
-      statusEl.innerText = "✓ Last backup: today";
-      statusEl.style.color = "#2F7D53";
-    } else if (days === 1) {
-      statusEl.innerText = "Last backup: 1 day ago";
-      statusEl.style.color = "#2F7D53";
-    } else if (days <= 7) {
-      statusEl.innerText = `Last backup: ${days} days ago`;
-      statusEl.style.color = days <= 3 ? "#2F7D53" : "#B8872F";
-    } else {
-      statusEl.innerText = `⚠ Last backup: ${days} days ago — back up soon!`;
+  if (statusEl) {
+    if (!lastBackup) {
+      statusEl.innerText = "⚠ You have never backed up your data yet.";
       statusEl.style.color = "#B3423B";
+    } else {
+      const days = Math.floor((Date.now() - parseInt(lastBackup, 10)) / (1000 * 60 * 60 * 24));
+      if (days <= 0) {
+        statusEl.innerText = "✓ Last backup: today";
+        statusEl.style.color = "#2F7D53";
+      } else if (days === 1) {
+        statusEl.innerText = "Last backup: 1 day ago";
+        statusEl.style.color = "#2F7D53";
+      } else if (days <= 7) {
+        statusEl.innerText = `Last backup: ${days} days ago`;
+        statusEl.style.color = days <= 3 ? "#2F7D53" : "#B8872F";
+      } else {
+        statusEl.innerText = `⚠ Last backup: ${days} days ago — back up soon!`;
+        statusEl.style.color = "#B3423B";
+      }
     }
   }
 
-  }
-
-  function openBackupFullscreen() {
-    const source = document.getElementById("summary-section");
-    const target = document.getElementById("backup-fullscreen-content");
-    const overlay = document.getElementById("backup-fullscreen-overlay");
-    if (!source || !target || !overlay) return;
-    const clone = source.cloneNode(true);
-    clone.querySelectorAll(".backup-fullscreen-trigger, .nav-menu, .eve-bot").forEach(el => el.remove());
-    clone.querySelectorAll("button, input, label").forEach(el => {
-      if (!el.closest("#backup-status")) el.remove();
+  const metricsContainer = document.getElementById("summary-dashboard-metrics");
+  if (metricsContainer) {
+    const catsCount = Object.keys(db.categories || {}).length;
+    const studsCount = (db.students || []).length;
+    let grandTotalPaid = 0;
+    Object.values(db.categories || {}).forEach(c => {
+      grandTotalPaid += (c.records || []).reduce((s, r) => s + (r.paid || 0), 0);
     });
-    target.innerHTML = clone.innerHTML;
-    overlay.classList.remove("hidden");
+
+    metricsContainer.innerHTML = `
+      <div class="summary-card"><h4>Database Items</h4><p>${studsCount}</p></div>
+      <div class="summary-card"><h4>Collections</h4><p>${catsCount}</p></div>
+      <div class="summary-card" style="grid-column: span 2;"><h4>Total Collections Money</h4><p style="color:var(--success)">${peso(grandTotalPaid)}</p></div>
+    `;
   }
+}
+
+function openBackupFullscreen() {
+  const source = document.getElementById("backup-section") || document.getElementById("summary-section");
+  const target = document.getElementById("backup-fullscreen-content");
+  const overlay = document.getElementById("backup-fullscreen-overlay");
+  if (!source || !target || !overlay) return;
+  
+  const clone = source.cloneNode(true);
+  clone.querySelectorAll(".backup-fullscreen-trigger, .nav-menu, .eve-bot").forEach(el => el.remove());
+  
+  target.innerHTML = "";
+  target.appendChild(clone);
+  overlay.classList.remove("hidden");
+}
+
+
+
+
+
+function openBackupFullscreen() {
+  const source = document.getElementById("summary-section");
+  const target = document.getElementById("backup-fullscreen-content");
+  const overlay = document.getElementById("backup-fullscreen-overlay");
+  if (!source || !target || !overlay) return;
+  
+  const clone = source.cloneNode(true);
+  
+  // Remove nav menus and floating assistants cleanly
+  clone.querySelectorAll(".backup-fullscreen-trigger, .nav-menu, .eve-bot").forEach(el => el.remove());
+  
+  // Clean up formatting but PRESERVE your essential backup control features
+  clone.querySelectorAll("button, input, label").forEach(el => {
+    // 💡 EXCEPTIONS: Do not remove elements if they are part of the backup status or the action tools
+    if (
+      el.closest("#backup-status") || 
+      el.getAttribute("onclick")?.includes("exportBackup") ||
+      el.getAttribute("onchange")?.includes("importBackup") ||
+      el.getAttribute("onclick")?.includes("resetAllData") ||
+      el.id === "backup-status"
+    ) {
+      return; // Leave these elements completely untouched!
+    }
+    el.remove();
+  });
+  
+  target.innerHTML = clone.innerHTML;
+  overlay.classList.remove("hidden");
+}
+
 
   function closeBackupFullscreen() {
     document.getElementById("backup-fullscreen-overlay")?.classList.add("hidden");
@@ -5164,10 +5501,13 @@ async function exportStatementImage() {
     }
   }
 
-  // Initial render on page load
+// Initial render on page load
 window.addEventListener("DOMContentLoaded", () => {
   checkMode();          // <-- NEW: mode must be checked first
   if (!getMode()) return; // Don't render until mode is chosen
+
+  /* 🔗 ADD THIS LINE TO SET A DEFAULT HOME TAB (e.g., Summary or Add) */
+  switchTab('summary-section', document.getElementById('nav-summary'));
 
   renderStudents();
   renderCategories();
@@ -5180,6 +5520,7 @@ window.addEventListener("DOMContentLoaded", () => {
   resetTxnForm();
   updateUndoRedoButtons();
 });
+
 
 /* =========================================================================
    EVE SMART ASSISTANT — Idle Toggle + Alert Replacement
@@ -7148,3 +7489,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 });
+
+
+function closeClassFundPaymentModal() {
+  const modal = document.getElementById("cf-payment-modal");
+  if (modal) {
+    modal.classList.add("hidden");
+  }
+}
